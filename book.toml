@@ -1,7 +1,7 @@
 [book]
 title = "LibreMatch Documentation"
 authors = ["simonsan", "LibreMatch Contributors"]
-description = "Documentation for LibreMatch - A community-driven API for Age of Empires game data"
+description = "Documentation for LibreMatch - A community-driven API documentation for Age of Empires"
 language = "en"
 src = "src"
 
