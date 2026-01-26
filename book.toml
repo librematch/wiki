@@ -20,11 +20,9 @@ smart-punctuation = true
 no-section-label = false
 additional-css = ["static/custom.css"]
 additional-js = []
-git-repository-url = "https://github.com/librematch/librematch-docs"
-edit-url-template = "https://github.com/librematch/librematch-docs/edit/main/{path}"
-# TODO: Configure when domain is set up
-# site-url = "/librematch-docs/"
-# cname = "docs.librematch.org"
+git-repository-url = "https://github.com/librematch/wiki"
+edit-url-template = "https://github.com/librematch/wiki/edit/main/{path}"
+cname = "wiki.librematch.org"
 
 [output.html.fold]
 enable = true
