@@ -1,0 +1,3 @@
+#### /getmatchdetail
+
+getMatchDetail

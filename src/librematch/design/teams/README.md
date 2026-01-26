@@ -1,0 +1,3 @@
+# Teams
+
+Team management documentation.

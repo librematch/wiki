@@ -1,0 +1,3 @@
+#### /GetSPFull
+
+Age2SPFull

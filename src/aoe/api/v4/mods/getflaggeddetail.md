@@ -1,0 +1,3 @@
+# /mods/GetFlaggedDetail
+
+modsFlaggedDetail

@@ -1,0 +1,11 @@
+{
+    "ignorePatterns": [
+        {
+            "pattern": "^(http|https)://aoe-api.worldsedgelink.com/"
+        },
+        {
+            "pattern": "^(http|https)://localhost"
+        }
+    ],
+    "aliveStatusCodes": [200, 206, 429]
+}

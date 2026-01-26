@@ -1,0 +1,3 @@
+# /mods/Rate
+
+modsRate

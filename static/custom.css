@@ -1,0 +1,23 @@
+/* Custom styles for LibreMatch Documentation */
+
+/* Prevent sidebar from auto-hiding on mobile after clicking a link */
+@media only screen and (max-width: 1000px) {
+    html.sidebar-visible #mdbook-sidebar.sidebar {
+        transform: translateX(0) !important;
+        visibility: visible !important;
+    }
+
+    html.sidebar-visible .sidebar-scrollbox {
+        visibility: visible !important;
+    }
+}
+
+/* Keep parent sections of current page expanded */
+.sidebar-scrollbox .chapter li.expanded > ol {
+    display: block !important;
+}
+
+/* Better highlight for active page */
+.sidebar-scrollbox .chapter li.active > a {
+    font-weight: bold;
+}

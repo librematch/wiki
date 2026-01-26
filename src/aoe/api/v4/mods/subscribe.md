@@ -1,0 +1,4 @@
+# /mods/Subscribe
+
+modsInstall
+modsSubscribe
