@@ -2,6 +2,9 @@
 
 [Example request](https://aoe-api.worldsedgelink.com/community/leaderboard/GetPersonalStat?title=age2&profile_names=[%22/steam/76561197984749679%22])
 
+Returns a player's profile information and their ranking statistics
+across all leaderboards they have participated in.
+
 ## Request
 
 | parameter     | type       | value                      | comments |
@@ -14,288 +17,101 @@
 
 ### AoE2:DE
 
-```
-{
-  "result": {
-    "code": 0,
-    "message": "SUCCESS"
-  },
-  "statGroups": [
-    {
-      "id": 200,
-      "name": "",
-      "type": 1,
-      "members": [
-        {
-          "profile_id": 196240,
-          "name": "/steam/76561197984749679",
-          "alias": "GL.TheViper",
-          "personal_statgroup_id": 200,
-          "xp": 3091,
-          "level": 2,
-          "leaderboardregion_id": 0,
-          "country": "de"
-        }
-      ]
-    }
-  ],
-  "leaderboardStats": [
-    {
-      "statgroup_id": 200,
-      "leaderboard_id": 3,
-      "wins": 910,
-      "losses": 477,
-      "streak": 5,
-      "disputes": 0,
-      "drops": 4,
-      "rank": 3,
-      "ranktotal": 39023,
-      "ranklevel": 1,
-      "rating": 2602,
-      "regionrank": 3,
-      "regionranktotal": 15933,
-      "lastmatchdate": 1664555924
-    },
-    {
-      "statgroup_id": 200,
-      "leaderboard_id": 4,
-      "wins": 119,
-      "losses": 35,
-      "streak": -1,
-      "disputes": 0,
-      "drops": 10,
-      "rank": -1,
-      "ranktotal": 62599,
-      "ranklevel": 0,
-      "rating": 1443,
-      "regionrank": -1,
-      "regionranktotal": 25154,
-      "lastmatchdate": 1661468788
-    },
-    {
-      "statgroup_id": 200,
-      "leaderboard_id": 1,
-      "wins": 44,
-      "losses": 13,
-      "streak": 2,
-      "disputes": 0,
-      "drops": 0,
-      "rank": -1,
-      "ranktotal": 62,
-      "ranklevel": 0,
-      "rating": 2044,
-      "regionrank": -1,
-      "regionranktotal": 24,
-      "lastmatchdate": 1620397322
-    },
-    {
-      "statgroup_id": 200,
-      "leaderboard_id": 2,
-      "wins": 7,
-      "losses": 2,
-      "streak": 3,
-      "disputes": 0,
-      "drops": 0,
-      "rank": -1,
-      "ranktotal": -1,
-      "ranklevel": -1,
-      "rating": 2049,
-      "regionrank": -1,
-      "regionranktotal": -1,
-      "lastmatchdate": 1591803253
-    },
-    {
-      "statgroup_id": 200,
-      "leaderboard_id": 13,
-      "wins": 146,
-      "losses": 63,
-      "streak": -1,
-      "disputes": 0,
-      "drops": 0,
-      "rank": 6,
-      "ranktotal": 2662,
-      "ranklevel": 1,
-      "rating": 1925,
-      "regionrank": 2,
-      "regionranktotal": 1046,
-      "lastmatchdate": 1664824305
-    },
-    {
-      "statgroup_id": 200,
-      "leaderboard_id": 14,
-      "wins": 1,
-      "losses": 0,
-      "streak": 1,
-      "disputes": 0,
-      "drops": 1,
-      "rank": -1,
-      "ranktotal": -1,
-      "ranklevel": -1,
-      "rating": 1039,
-      "regionrank": -1,
-      "regionranktotal": -1,
-      "lastmatchdate": 1656025212
-    }
-  ]
-}
-```
+The response pairs `statGroups` (player profile) with
+`leaderboardStats` (one entry per leaderboard the player has
+played on).
 
-```
+```json
 {
-    "$schema": "http://json-schema.org/schema#",
-    "type": "object",
-    "properties": {
-        "result": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "integer"
-                },
-                "message": {
-                    "type": "string"
-                }
-            },
-            "required": [
-                "code",
-                "message"
-            ]
-        },
-        "statGroups": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "integer"
-                    },
-                    "name": {
-                        "type": "string"
-                    },
-                    "type": {
-                        "type": "integer"
-                    },
-                    "members": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "profile_id": {
-                                    "type": "integer"
-                                },
-                                "name": {
-                                    "type": "string"
-                                },
-                                "alias": {
-                                    "type": "string"
-                                },
-                                "personal_statgroup_id": {
-                                    "type": "integer"
-                                },
-                                "xp": {
-                                    "type": "integer"
-                                },
-                                "level": {
-                                    "type": "integer"
-                                },
-                                "leaderboardregion_id": {
-                                    "type": "integer"
-                                },
-                                "country": {
-                                    "type": "string"
-                                }
-                            },
-                            "required": [
-                                "alias",
-                                "country",
-                                "leaderboardregion_id",
-                                "level",
-                                "name",
-                                "personal_statgroup_id",
-                                "profile_id",
-                                "xp"
-                            ]
-                        }
-                    }
-                },
-                "required": [
-                    "id",
-                    "members",
-                    "name",
-                    "type"
-                ]
-            }
-        },
-        "leaderboardStats": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "statgroup_id": {
-                        "type": "integer"
-                    },
-                    "leaderboard_id": {
-                        "type": "integer"
-                    },
-                    "wins": {
-                        "type": "integer"
-                    },
-                    "losses": {
-                        "type": "integer"
-                    },
-                    "streak": {
-                        "type": "integer"
-                    },
-                    "disputes": {
-                        "type": "integer"
-                    },
-                    "drops": {
-                        "type": "integer"
-                    },
-                    "rank": {
-                        "type": "integer"
-                    },
-                    "ranktotal": {
-                        "type": "integer"
-                    },
-                    "ranklevel": {
-                        "type": "integer"
-                    },
-                    "rating": {
-                        "type": "integer"
-                    },
-                    "regionrank": {
-                        "type": "integer"
-                    },
-                    "regionranktotal": {
-                        "type": "integer"
-                    },
-                    "lastmatchdate": {
-                        "type": "integer"
-                    }
-                },
-                "required": [
-                    "disputes",
-                    "drops",
-                    "lastmatchdate",
-                    "leaderboard_id",
-                    "losses",
-                    "rank",
-                    "ranklevel",
-                    "ranktotal",
-                    "rating",
-                    "regionrank",
-                    "regionranktotal",
-                    "statgroup_id",
-                    "streak",
-                    "wins"
-                ]
-            }
-        }
+    "result": {
+        "code": 0,
+        "message": "SUCCESS"
     },
-    "required": [
-        "leaderboardStats",
-        "result",
-        "statGroups"
+    "statGroups": [
+        {
+            "id": 200,
+            "name": "",
+            "type": 1,
+            "members": [
+                {
+                    "profile_id": 196240,
+                    "name": "/steam/76561197984749679",
+                    "alias": "GL.TheViper",
+                    "personal_statgroup_id": 200,
+                    "xp": 3091,
+                    "level": 2,
+                    "leaderboardregion_id": 0,
+                    "country": "de"
+                }
+            ]
+        }
+    ],
+    "leaderboardStats": [
+        {
+            "statgroup_id": 200,
+            "leaderboard_id": 3,
+            "wins": 910,
+            "losses": 477,
+            "streak": 5,
+            "disputes": 0,
+            "drops": 4,
+            "rank": 3,
+            "ranktotal": 39023,
+            "ranklevel": 1,
+            "rating": 2602,
+            "regionrank": 3,
+            "regionranktotal": 15933,
+            "lastmatchdate": 1664555924
+        },
+        {
+            "statgroup_id": 200,
+            "leaderboard_id": 4,
+            "wins": 119,
+            "losses": 35,
+            "streak": -1,
+            "disputes": 0,
+            "drops": 10,
+            "rank": -1,
+            "ranktotal": 62599,
+            "ranklevel": 0,
+            "rating": 1443,
+            "regionrank": -1,
+            "regionranktotal": 25154,
+            "lastmatchdate": 1661468788
+        }
+        // ... one entry per leaderboard the player has participated in
     ]
 }
 ```
+
+#### `statGroups[].members[]` fields
+
+| field                 | type   | description                                           |
+| --------------------- | ------ | ----------------------------------------------------- |
+| profile_id            | int    | Unique player profile identifier                      |
+| name                  | string | Platform-specific identity (e.g. `/steam/<steam_id>`) |
+| alias                 | string | Player display name                                   |
+| personal_statgroup_id | int    | The player's personal stat group ID                   |
+| xp                    | int    | Experience points                                     |
+| level                 | int    | Player level                                          |
+| leaderboardregion_id  | int    | Region ID (see GetAvailableLeaderboards)              |
+| country               | string | ISO 3166-1 alpha-2 country code                       |
+
+#### `leaderboardStats[]` fields
+
+| field           | type | description                                                  |
+| --------------- | ---- | ------------------------------------------------------------ |
+| statgroup_id    | int  | References the `statGroups` entry by `id`                    |
+| leaderboard_id  | int  | Leaderboard this stat belongs to                             |
+| wins            | int  | Total wins                                                   |
+| losses          | int  | Total losses                                                 |
+| streak          | int  | Current win/loss streak (positive = wins, negative = losses) |
+| disputes        | int  | Number of disputed matches                                   |
+| drops           | int  | Number of disconnects                                        |
+| rank            | int  | Current rank position (`-1` = unranked)                      |
+| ranktotal       | int  | Total number of ranked players on this leaderboard           |
+| ranklevel       | int  | Rank tier/level (`0` = unranked, `1` = ranked)               |
+| rating          | int  | Elo rating                                                   |
+| regionrank      | int  | Rank within the player's region (`-1` = unranked)            |
+| regionranktotal | int  | Total ranked players in the region (`-1` = unavailable)      |
+| lastmatchdate   | int  | Unix timestamp of the last match played                      |

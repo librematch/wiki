@@ -4,67 +4,36 @@
 
 ## Request
 
-| parameter  | type     | value                  | comments |
-| ---------- | -------- | ---------------------- | -------- |
-| title      | str/enum | age1, age2, age3, age4 |          |
-| profileids | arr[int] | [196240]               |          |
+| parameter  | type       | value                  | comments |
+| ---------- | ---------- | ---------------------- | -------- |
+| title      | str/enum   | age1, age2, age3, age4 |          |
+| profileids | array[int] | e.g. [196240]          |          |
 
 ## Response
 
 ### AoE2:DE
 
-```
-{
-  "result": {
-    "code": 0,
-    "message": "SUCCESS"
-  },
-  "itemInstancesByProfileID": [
-    {
-      "\"196240\"": []
-    }
-  ]
-}
-```
+Returns item inventories grouped by profile ID. The community
+endpoint appears to always return empty inventory arrays --
+for actual item data, use the authenticated
+[/game/item/getInventoryByProfileIDs](../../game/item/getinventorybyprofileids.md)
+endpoint instead.
 
-```
+```json
 {
-    "$schema": "http://json-schema.org/schema#",
-    "type": "object",
-    "properties": {
-        "result": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "integer"
-                },
-                "message": {
-                    "type": "string"
-                }
-            },
-            "required": [
-                "code",
-                "message"
-            ]
-        },
-        "itemInstancesByProfileID": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "\"196240\"": {
-                        "type": "array"
-                    }
-                },
-                "required": [
-                    "\"196240\""
-                ]
-            }
-        }
+    "result": {
+        "code": 0,
+        "message": "SUCCESS"
     },
-    "required": [
-        "itemInstancesByProfileID",
-        "result"
+    "itemInstancesByProfileID": [
+        {
+            "\"196240\"": []
+        }
     ]
 }
 ```
+
+> **Note:** The profile ID key in the response is
+> double-quoted as a string (e.g. `"\"196240\""`). The
+> inventory array is consistently empty on the community
+> endpoint.
