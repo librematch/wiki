@@ -12,4 +12,6 @@ Public endpoints for querying leaderboards, player statistics, and match history
 | [getLeaderBoard2](./getleaderboard2.md)                   | GET    | Get leaderboard rankings with player stats        |
 | [getPersonalStat](./getpersonalstat.md)                   | GET    | Get a player's statistics across all leaderboards |
 | [getAvatarStatForProfile](./getavatarstatforprofile.md)   | GET    | Get avatar/profile stats for a player             |
+| [getMatchHistory](./getmatchhistory.md)                   | GET    | Get match details by match ID(s)                  |
 | [getRecentMatchHistory](./getrecentmatchhistory.md)       | GET    | Get a player's recent match history               |
+| [getReplayFiles](./getreplayfiles.md)                     | GET    | Get signed download URLs for replay files         |

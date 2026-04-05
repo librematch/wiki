@@ -37,3 +37,33 @@ Use a dual-API approach:
 ### Error Handling
 
 Implement logging for rate limit errors (HTTP 429) to monitor API usage patterns
+
+### Request Headers
+
+Include a `User-Agent` header that identifies your project and
+provides contact details (e.g. email, Discord ID). This is good
+practice for any API you consume, not just Age of Empires.
+
+```
+User-Agent: MyProject/1.0 (contact@example.com; Discord: user#1234)
+```
+
+### Timeouts
+
+Set request timeouts generously. Some endpoints (especially
+`getRecentMatchHistory`) can take longer to respond. A timeout
+of 5 seconds is too short -- use longer timeouts (15-30 seconds
+recommended) to avoid terminating requests that are still being
+processed server-side.
+
+Short client-side timeouts cause the server to log 499 status
+codes (client closed connection). At scale this can trigger
+server-side alerts and be mistaken for connectivity issues,
+which puts unnecessary burden on the operations team. In the
+worst case your IP may be banned to protect the service.
+
+### Self-Throttling on Errors
+
+When you encounter timeouts or errors, log them and
+self-throttle. Do not retry aggressively. Play as nicely as
+possible with the game servers and investigate issues proactively.

@@ -89,7 +89,9 @@
     - [getAvatarStatForProfile](./rlink/community/leaderboard/getavatarstatforprofile.md)
     - [getLeaderBoard2](./rlink/community/leaderboard/getleaderboard2.md)
     - [getPersonalStat](./rlink/community/leaderboard/getpersonalstat.md)
+    - [getMatchHistory](./rlink/community/leaderboard/getmatchhistory.md)
     - [getRecentMatchHistory](./rlink/community/leaderboard/getrecentmatchhistory.md)
+    - [getReplayFiles](./rlink/community/leaderboard/getreplayfiles.md)
   - [/community/news](./rlink/community/news.md)
 
 ## /game
