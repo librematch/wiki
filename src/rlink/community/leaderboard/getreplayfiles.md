@@ -53,7 +53,7 @@ to stay within limits.
 
 | field           | type   | description                                                                                                 |
 | --------------- | ------ | ----------------------------------------------------------------------------------------------------------- |
-| expiryUnix      | int    | Unix timestamp when the signed URLs expire                                                                  |
+| expiryUnix      | int    | Unix timestamp (in seconds) when the signed URLs expire                                                     |
 | profile_id      | int    | Profile ID of the player who uploaded this replay                                                           |
 | matchhistory_id | int    | Match ID this replay belongs to                                                                             |
 | url             | string | Signed Azure Blob Storage URL (expires at expiryUnix)                                                       |
