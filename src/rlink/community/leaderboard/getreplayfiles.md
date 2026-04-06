@@ -53,12 +53,12 @@ to stay within limits.
 
 | field           | type   | description                                                                                                 |
 | --------------- | ------ | ----------------------------------------------------------------------------------------------------------- |
-| expiryUnix      | int    | Unix timestamp (in seconds) when the signed URLs expire                                                     |
+| expiryUnix      | int    | Unix timestamp (seconds) when the signed URLs expires                                                       |
 | profile_id      | int    | Profile ID of the player who uploaded this replay                                                           |
 | matchhistory_id | int    | Match ID this replay belongs to                                                                             |
-| url             | string | Signed Azure Blob Storage URL (expires at expiryUnix)                                                       |
+| url             | string | Signed Azure Blob Storage URL; expires at `expiryUnix`                                                      |
 | size            | int    | File size in bytes; `-1` means the replay was never uploaded and the URL will return a `BlobNotFound` error |
-| datatype        | int    | Data type identifier (0 = replay)                                                                           |
+| datatype        | int    | `0` = full replay, `1` = summary (AoE4 only)                                                                |
 
 > **Note:** The `url` field is a signed Azure Blob Storage URL
 > with an expiration timestamp. Download and cache replay files
