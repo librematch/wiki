@@ -57,10 +57,17 @@ to stay within limits.
 | profile_id      | int    | Profile ID of the player who uploaded this replay     |
 | matchhistory_id | int    | Match ID this replay belongs to                       |
 | url             | string | Signed Azure Blob Storage URL (expires at expiryUnix) |
-| size            | int    | File size in bytes                                    |
+| size            | int    | File size in bytes; `-1` means the replay was never uploaded and the URL will return a `BlobNotFound` error |
 | datatype        | int    | Data type identifier (0 = replay)                     |
 
 > **Note:** The `url` field is a signed Azure Blob Storage URL
 > with an expiration timestamp. Download and cache replay files
 > rather than storing the URL for later use. One replay file is
 > returned per player in the match.
+
+> **Important:** Filter out entries where `size` is `-1` — these
+> replays were never uploaded by the player and the download URL
+> will return a `BlobNotFound` error. Among the remaining entries,
+> prefer the one with the largest `size`, as it is likely the most
+> complete recording (i.e. from the player who stayed longest in
+> the match).
