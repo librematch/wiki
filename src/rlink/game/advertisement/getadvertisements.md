@@ -184,3 +184,54 @@ Pragma: no-cache
     ]
 ]
 ```
+
+## Field layout note (AoE2:DE, observed October 2026)
+
+The sample above shows the 24-field form of the advertisement array. When
+implementing a local RLink-compatible server, we found that the current PC
+client rejected that 24-field form with:
+
+```
+WorldwideUpdateAdvertisementAsync - response was not formatted correctly
+AdvertisementByIDCache - response was not formatted correctly
+```
+
+The same client accepted a **27-field** form. The extra three elements are
+inserted after the GoG lobby ID (`"0"`): two empty strings and the Xbox session
+ID. The accepted layout we observed was:
+
+| Index | Field                         |
+| ----- | ----------------------------- |
+| 0     | advertisement ID              |
+| 1     | platform session ID           |
+| 2     | GoG lobby ID (`"0"`)          |
+| 3     | empty string                  |
+| 4     | empty string                  |
+| 5     | Xbox session ID               |
+| 6     | host profile ID               |
+| 7     | state                         |
+| 8     | description                   |
+| 9     | description (duplicate)       |
+| 10    | visible                       |
+| 11    | map name                      |
+| 12    | options                       |
+| 13    | passworded                    |
+| 14    | max players                   |
+| 15    | slot info                     |
+| 16    | match type                    |
+| 17    | peers                         |
+| 18    | observer count                |
+| 19    | observer max                  |
+| 20    | observers enabled             |
+| 21    | observer delay                |
+| 22    | observers passworded          |
+| 23    | LAN                           |
+| 24    | start time (or `null`)        |
+| 25    | relay region (or `null`)      |
+| 26    | BattleServer name (or `null`) |
+
+This may be client-version dependent; the 24-field sample is left above because
+it is still useful for field names and value shapes. If you are implementing a
+server, verify the accepted field count against the exact client build you
+target, and test an ordinary custom-game advertisement too: a wrong layout
+breaks both custom games and automatch.

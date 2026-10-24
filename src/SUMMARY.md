@@ -129,6 +129,7 @@
     - [polling](./rlink/game/automatch2/polling.md)
     - [stoppolling](./rlink/game/automatch2/stoppolling.md)
     - [updateStatus](./rlink/game/automatch2/updatestatus.md)
+    - [Implementation notes](./rlink/game/automatch2/notes.md)
   - [/game/challenge](./rlink/game/challenge/README.md)
     - [getChallengeProgress](./rlink/game/challenge/getchallengeprogress.md)
     - [getChallengeProgressByProfileID](./rlink/game/challenge/getchallengeprogressbyprofileid.md)
