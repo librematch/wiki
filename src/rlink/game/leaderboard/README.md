@@ -17,3 +17,7 @@ Endpoints for accessing player rankings, statistics, and match history.
 | [getStatGroupsByProfileIDs](./getstatgroupsbyprofileids.md)                     | GET      | Get stat groups for multiple profile IDs                                 |
 | [getStatsForLeaderboardByProfileName](./getstatsforleaderboardbyprofilename.md) | GET      | Search leaderboard stats by player name                                  |
 | [setAvatarStatValues](./setavatarstatvalues.md)                                 | POST     | Update avatar statistics                                                 |
+
+The positional layout shared by the stat groups, profile infos and leaderboard
+stats arrays (and the match history fields) is documented in
+[notes](./notes.md).
