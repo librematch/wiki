@@ -95,12 +95,6 @@ info:
     `api-dr.ageofempires.com`. The wiki documents
     `api-dev.ageofempires.com` for `/Poll` only.
 
-    ## Scope
-
-    The local operational routes of the reimplementation (`/test`,
-    `/cacert.pem` and `/openapi.yml`) and its reimplementation-only Media and
-    MatchContent surfaces are deliberately absent: the captures and the wiki
-    do not document them as original endpoints.
   contact:
     name: LibreMatch community documentation
     url: https://librematch.github.io/wiki/aoe/api/
