@@ -1,8 +1,8 @@
 asyncapi: "3.1.0"
 id: "urn:api:worldsedgelink:websocket"
 info:
-  title: Age Server WebSocket API
-  version: "2.0.0"
+  title: WorldsEdgeLink Websocket API
+  version: "1.0.0"
   description: |
     AsyncAPI description of the official Age of Empires notification socket, the
     push half of the REST API. The game clients open one WebSocket at `/wss/` and receive
