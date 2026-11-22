@@ -1,0 +1,5408 @@
+openapi: 3.2.1
+info:
+  title: Age of Empires API
+  version: "2026-11-21"
+  description: |
+    OpenAPI description of the original Age of Empires service published at
+    api.ageofempires.com: the v4 and legacy v1 mod catalogue, the legacy bug
+    endpoints, polls, text moderation, the website metadata and the
+    game-statistics and leaderboard endpoints used by the official website.
+
+    This document describes the publisher's service, not the local
+    reimplementation. It combines two evidence sources:
+
+    * Traffic captured from the live service. These
+      operations carry `x-source: capture` and reproduce the observed wire
+      shape, quirks and examples.
+    * The LibreMatch wiki (https://librematch.github.io/wiki/aoe/api/). Its
+      endpoint pages cover operations that the captures do not include. They
+      carry `x-source: wiki`; fields the wiki does not publish are left open
+      (`WikiObject`).
+
+    ## Fidelity
+
+    * `Faithful` - captured from the original service; the shapes and quirks
+      are the observed ones.
+    * `Documented` - listed by the LibreMatch wiki but absent from the
+      captures. The path and method are the documented ones; fields the wiki
+      does not publish are not invented.
+
+    ## Authentication
+
+    * Game clients send `Authorization: Steam1.0 <ticket>`.
+    * Microsoft Store clients send `Authorization: XBL3.0 x=<puid>;<XToken>`.
+    * The website sends the `.AgeOfEmpiresServices` session cookie.
+
+    The three schemes are alternatives. The publisher's backend does not
+    publish its verification rules; this document only describes the headers
+    the clients send and the viewer-dependent fields (`isLoggedOn`, `user*`
+    and ownership) that the captured responses expose.
+
+    ## Path matching
+
+    The clients disagree on casing: AOE2 sends `/api/v4/mods/...`, AOE3 and
+    AOE4 send `/api/v4/Mods/...`, and AOM mixes both in one session. The
+    service accepts both. Each operation is documented once, with the casing
+    of the captured or documented request.
+
+    ## Requests
+
+    * GET binds fields from the query string.
+    * POST and PUT accept a JSON body (`Content-Type: application/json`) or an
+      `application/x-www-form-urlencoded` one.
+    * Publish, the legacy Create, PublishFile and CheckAndPublishFile use
+      `multipart/form-data` or a raw binary body; the wiki documents the
+      endpoint, not the exact multipart field list.
+    * Unknown fields are ignored by the service.
+
+    ## Responses
+
+    * JSON is `application/json; charset=utf-8`.
+    * Every captured list echoes the resolved filter in `searchParams`:
+      `order` is upper-cased and `modid` is always a JSON string (`"0"` when
+      unset).
+    * A successful captured list carries `errorCode: -1` and an empty
+      `errorMessage`.
+    * `totalCount` is null on an empty page (and always null on the legacy v1
+      `My`).
+    * Errors use the `ErrorResponse` envelope. Its `errorCode` is not an HTTP
+      status: 400 bad request, 900 unauthenticated, 404 not found, 429 rate
+      limited, 500 internal error. Only the 401 also carries `isLoggedOn`.
+    * The v4 `Detail` of a deleted mod answers the RFC 9110 `ProblemDetails`
+      body instead.
+
+    ## Pagination
+
+    `start` is a 1-based page number: `OFFSET = max(0, start-1) * count`, and
+    both 0 and 1 mean the first page. `count` 0 means "no limit". Sentinels:
+    `q` `""` or `"*"`, `filter` 0 and `modid` 0/`""` mean "no filter"; a
+    negative tag id excludes that tag.
+
+    ## URLs
+
+    `downloadUrl`, `fileUrl`, `imageName` and `imageThumbnail` are absolute
+    URLs. A stored absolute URL (a CDN) is returned untouched.
+
+    ## CORS
+
+    The website preflights every POST. The service answers the preflight with
+    204, allows `https://www.ageofempires.com`, never uses a wildcard while
+    credentials are allowed, and advertises GET, POST, PUT and OPTIONS.
+
+    ## Hosts
+
+    The clients reach `api.ageofempires.com`; the downloads use
+    `api-dr.ageofempires.com`. The wiki documents
+    `api-dev.ageofempires.com` for `/Poll` only.
+
+  contact:
+    name: LibreMatch community documentation
+    url: https://librematch.github.io/wiki/aoe/api/
+externalDocs:
+  description: LibreMatch wiki - Age of Empires API
+  url: https://librematch.github.io/wiki/aoe/api/
+servers:
+  - url: https://api.ageofempires.com
+    description: Production API host.
+  - url: https://api-dev.ageofempires.com
+    description: Development host; the wiki documents it for /Poll only.
+  - url: https://api-dr.ageofempires.com
+    description: Download/redirect host used by the clients' downloads.
+security:
+  - SteamAuth: []
+  - XblAuth: []
+  - WebSession: []
+tags:
+  - name: Games
+    description: The titles the mods API serves.
+  - name: Tags
+    description: Mod types/tags of the catalogue.
+  - name: Featured
+    description: Featured mods.
+  - name: Mods
+    description: v4 search, detail, user state and mod management.
+  - name: Legacy
+    description: The legacy v1 mod surface, with its own row render.
+  - name: Polls
+    description: In-game polls.
+  - name: Moderation
+    description: Text moderation and the moderation endpoints documented by the wiki.
+  - name: Bugs
+    description: Legacy bug-reporting endpoints documented by the wiki.
+  - name: GameStats
+    description: Per-title statistics and match history documented by the wiki.
+  - name: Leaderboards
+    description: Ranked and event leaderboards documented by the wiki.
+  - name: Web API
+    description: Website metadata endpoints documented by the wiki.
+
+components:
+  securitySchemes:
+    SteamAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: "Steam1.0"
+      description: Steam authentication token sent by the game clients
+    XblAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: "XBL3.0"
+      description: |
+        Xbox token of the Microsoft Store clients, sent as
+        `XBL3.0 x=<puid>;<XToken>`. The AOE3 capture carries Steam for the
+        read endpoints and this for `My`, `Publish` and `Delete` in the same
+        session.
+    WebSession:
+      type: apiKey
+      in: cookie
+      name: .AgeOfEmpiresServices
+      description: Website session cookie used by www.ageofempires.com instead of a Steam token
+  parameters:
+    GameQuery:
+      name: game
+      in: query
+      required: false
+      schema:
+        type: integer
+        enum: [1, 2, 3, 4, 1001]
+      description: Game title id whose catalogue is returned; absent means every game.
+    Comp:
+      name: comp
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [block, blocklist]
+        default: block
+      description: Upload stage. An absent or empty value behaves like `block`.
+    BlockId:
+      name: blockid
+      in: query
+      required: false
+      schema:
+        type: string
+        default: "00000000"
+      description: Azure block id of a `comp=block` request; empty means `00000000`.
+    ModIdQuery:
+      name: modId
+      in: query
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+      description: Mod the uploaded blocks belong to.
+  headers:
+    ContentDisposition:
+      description: '`attachment; filename="<stored name>"`.'
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: The request could not be parsed, or a required or invalid field was rejected.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            badRequest:
+              value:
+                errorCode: 400
+                errorMessage: invalid body
+    Unauthorized:
+      description: Missing or unknown credential, or the caller is not the creator of the mod.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unauthorized:
+              value:
+                errorCode: 900
+                errorMessage: Access Denied - User not authenticated.
+                isLoggedOn: false
+    NotFound:
+      description: The resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            notFound:
+              value:
+                errorCode: 404
+                errorMessage: not found
+    ProblemNotFound:
+      description: RFC 9110 problem document returned by the v4 Detail of a deleted mod.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            problem:
+              value:
+                type: https://tools.ietf.org/html/rfc9110#section-15.5.5
+                title: Not Found
+                status: 404
+                traceId: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00
+    InternalServerError:
+      description: The service failed to read or write its store.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            internal:
+              value:
+                errorCode: 500
+                errorMessage: internal error
+  examples:
+    GameList:
+      summary: Two of the five supported titles
+      value:
+        - gameTitleId: 2
+          gameTitleName: Age of Empires II DE
+          gameVersion: null
+        - gameTitleId: 1001
+          gameTitleName: "Age of Mythology: Retold"
+          gameVersion: null
+    TagList:
+      summary: Two mod types of one game
+      value:
+        - modTypeId: 15
+          modTypeName: Random Maps
+          gameTitleId: 2
+        - modTypeId: 26
+          modTypeName: Other
+          gameTitleId: 2
+    ModListPage:
+      summary: One page of the resolved filter
+      value:
+        searchParams:
+          q: ""
+          creator: null
+          filter: 0
+          sort: popular
+          order: DESC
+          start: 1
+          count: 30
+          game: 2
+          modid: "0"
+        modList:
+          - modId: 593779
+            gameTitleId: 2
+            gameTitleName: Age of Empires II DE
+            modName: test_mod
+            description: A test mod
+            modDescription: A test mod
+            changeList: '<h4 class="mod-update-date">11/18/2026</h4><p>changelog</p>'
+            modVersion: 1.1
+            verifiedVersion: ""
+            modTypeId: 26
+            clientId: null
+            modType: Other
+            modTags: [Other]
+            modTagIds: [26]
+            modTagNames: [Other]
+            metaData: null
+            modStatusId: 2
+            modStatus: Published
+            modStatusMessage: ""
+            modVisibility: Public
+            creatorId: 1000
+            creatorName: /steam/76561198000000000
+            creatorAvatarUrl: null
+            isOwner: false
+            isLoggedOn: true
+            allowDiscussion: false
+            discourseUrl: null
+            createDate: "2026-11-18T10:00:00.000"
+            lastUpdate: "2026-11-18T10:00:00.000"
+            updateAvailable: false
+            modFileSize: 2813
+            modDiskSize: 6654
+            popular: 1
+            downloads: 1
+            installs: 1
+            likes: 0
+            userLiked: null
+            ratings:
+              rating:
+                average: 0
+                totalCount: 0
+              reviewsCount: 0
+            currentRating: 0
+            userDownloaded: false
+            userInstalled: false
+            userFlagged: null
+            userRating: null
+            userReview: null
+            positiveRatings: 0
+            totalRatings: 0
+            thumbnail: https://api.ageofempires.com/api/v4/mods/image/0123456789abcdef.png
+            fileUrl: https://api.ageofempires.com/api/v4/Mods/Download/593779/file
+            imageUrls: []
+            thirtyDayPopular: null
+            sortName: null
+            sendNotifications: false
+        totalCount: 1
+        isLoggedOn: true
+        errorCode: -1
+        errorMessage: ""
+    DownloadInfo:
+      summary: Subscribe and Download body
+      value:
+        downloadUrl: https://api.ageofempires.com/api/v4/Mods/Download/593779/file
+        downloadCount: 12
+        installCount: 5
+        gameTitleId: 2
+        fileCRC: 1a2b3c4d
+    RateResponse:
+      summary: Refreshed aggregate of a rated mod
+      value:
+        statusCode: null
+        responseMessage: null
+        playFabResponse:
+          rating:
+            average: 4.1
+            totalCount: 125
+          reviewsCount: 3
+    Reviews:
+      summary: One review
+      value:
+        continuationToken: null
+        reviews:
+          - helpfulNegative: 0
+            helpfulnessVotes: 0
+            helpfulPositive: 0
+            isInstalled: false
+            itemId: null
+            itemVersion: ""
+            locale: null
+            rating: 5
+            reviewerId: null
+            reviewId: null
+            reviewText: Great mod
+            submitted: "2026-11-18T10:00:00"
+            title: Great mod
+            reviewerName: /steam/76561198000000000
+            avatarUrl: ""
+        totalCount: 1
+    LegacyModList:
+      summary: One page of the legacy render
+      value:
+        searchParams:
+          q: "*"
+          creator: null
+          filter: 0
+          sort: null
+          order: null
+          start: 1
+          count: 45
+          game: 2
+          modid: null
+        modList:
+          - modId: 93963
+            gameTitleId: null
+            gameTitleName: null
+            modName: test_mod
+            description: A test mod
+            modDescription: A test mod
+            changeList: null
+            modVersion: 1.1
+            verifiedVersion: null
+            modTypeId: null
+            clientId: null
+            modType: Other
+            modTags: ["26"]
+            modTagIds: null
+            modTagNames: [Other]
+            metaData: null
+            modStatusId: null
+            modStatus: Published
+            modStatusMessage: null
+            modVisibility: Public
+            creatorId: null
+            creatorName: /steam/76561198000000000
+            creatorAvatarUrl: null
+            isOwner: false
+            isLoggedOn: true
+            allowDiscussion: false
+            discourseUrl: null
+            createDate: "2026-11-18T10:00:00.000"
+            lastUpdate: "2026-11-18T10:00:00.000"
+            updateAvailable: false
+            modFileSize: 2813
+            modDiskSize: null
+            popular: null
+            downloads: 1
+            installs: 1
+            likes: 0
+            userLiked: null
+            ratings: null
+            currentRating: 0
+            userDownloaded: false
+            userInstalled: false
+            userFlagged: null
+            userRating: null
+            userReview: null
+            positiveRatings: 0
+            totalRatings: 0
+            thumbnail: https://api.ageofempires.com/api/v4/mods/image/0123456789abcdef.png
+            fileUrl: null
+            imageUrls: null
+            thirtyDayPopular: null
+            sortName: null
+            sendNotifications: false
+        totalCount: 1
+        isLoggedOn: true
+        errorCode: -1
+        errorMessage: ""
+    FlagResponse:
+      summary: Result of the legacy Flag
+      value:
+        errorCode: 0
+        errorMessage: ""
+        resultKey: flag
+        resultValue: Poor Performance
+        resultJson: null
+    InstallResponse:
+      summary: Serializer envelope of the legacy Install
+      value:
+        contentType: application/json
+        serializerSettings: null
+        statusCode: 200
+        value:
+          downloadUrl: https://api.ageofempires.com/api/v4/Mods/Download/93963/file
+          downloadCount: 3
+          installCount: 2
+          gameTitleId: 2
+          fileCRC: 1a2b3c4d
+    UninstallResponse:
+      summary: Serializer envelope of the legacy Uninstall
+      value:
+        contentType: application/json
+        serializerSettings: null
+        statusCode: 200
+        value: true
+    ModIdResult:
+      summary: Envelope of Publish and the legacy Create
+      value:
+        errorCode: 0
+        errorMessage: "0"
+        resultKey: ModId
+        resultValue: "593779"
+        resultJson: null
+    DeletedModResponseV1:
+      summary: Result of the legacy Delete
+      value:
+        errorCode: 0
+        errorMessage: "0"
+        resultKey: Deleted
+        resultValue: "true"
+        resultJson: null
+    TrueLiteral:
+      summary: Bare JSON literal
+      value: true
+    PollList:
+      summary: One active poll
+      value:
+        - id: 4d3c2b1a-1f2e-4a5b-8c9d-0e1f2a3b4c5d
+          gameId: 2
+          created: "2026-11-01T00:00:00"
+          startDateTime: "2026-11-01T00:00:00"
+          endDateTime: "2026-12-01T00:00:00"
+          expireDateTime: "2026-12-08T00:00:00"
+          metadata: ""
+          icon: null
+    Poll:
+      summary: One poll with a single-choice question
+      value:
+        id: 4d3c2b1a-1f2e-4a5b-8c9d-0e1f2a3b4c5d
+        pollId: 4d3c2b1a-1f2e-4a5b-8c9d-0e1f2a3b4c5d
+        gameId: 2
+        createdBy: /steam/76561198000000000
+        created: "2026-11-01T00:00:00"
+        startDateTime: "2026-11-01T00:00:00"
+        endDateTime: "2026-12-01T00:00:00"
+        expireDateTime: "2026-12-08T00:00:00"
+        metadata: ""
+        isDefinition: true
+        totalVotes: 10
+        questions:
+          - id: 1
+            order: 0
+            content: What do you think of the new patch?
+            type: multiple-choice
+            maxOptions: 1
+            userVoted: false
+            totalVotes: 10
+            options:
+              - id: 1
+                value: Great
+                voteCount: 7
+                userVote: false
+              - id: 2
+                value: Needs work
+                voteCount: 3
+                userVote: false
+    TextModeration:
+      summary: Observed answer for benign text
+      value:
+        filterResult: Allow
+        familyFriendlyResult: Allow
+        mediumResult: Allow
+        matureResult: Allow
+        maturePlusResult: Allow
+        translationAvailable: false
+        moderatedText: Test Mod
+        language: en
+  schemas:
+    # Game schemas
+    Game:
+      type: object
+      properties:
+        gameTitleId:
+          type: integer
+          description: Unique game identifier
+          enum: [1, 2, 3, 4, 1001]
+        gameTitleName:
+          type: string
+          description: Display name of the game
+        gameVersion:
+          type: [string, 'null']
+          description: Current game version (if available)
+      required:
+        - gameTitleId
+        - gameTitleName
+        - gameVersion
+      examples:
+        - gameTitleId: 2
+          gameTitleName: "Age of Empires II DE"
+          gameVersion: null
+
+    GameList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Game'
+
+    # Tag schemas
+    ModTag:
+      type: object
+      properties:
+        modTypeId:
+          type: integer
+          description: Unique tag type identifier
+        modTypeName:
+          type: string
+          description: Display name of the mod type
+        gameTitleId:
+          type: integer
+          description: Game this tag belongs to
+      required:
+        - modTypeId
+        - modTypeName
+        - gameTitleId
+      examples:
+        - modTypeId: 15
+          modTypeName: "Random Maps"
+          gameTitleId: 2
+
+    ModTagList:
+      type: array
+      items:
+        $ref: '#/components/schemas/ModTag'
+
+    ModImage:
+      type: object
+      description: One entry of `imageUrls`.
+      properties:
+        imageId:
+          type: string
+        displayIndex:
+          type: integer
+        imageName:
+          type: string
+        imageThumbnail:
+          type: string
+        imageFileSize:
+          type: [number, 'null']
+      required: [imageId, displayIndex, imageName, imageThumbnail]
+
+    # Mod schemas
+    ModMetaData:
+      type: object
+      properties:
+        modId:
+          type: integer
+        gameTitleId:
+          type: [integer, 'null']
+        gameTitleName:
+          type: [string, 'null']
+        modName:
+          type: string
+        description:
+          type: [string, 'null']
+        modDescription:
+          type: [string, 'null']
+        changeList:
+          type: [string, 'null']
+        modVersion:
+          type: number
+        verifiedVersion:
+          type: [string, 'null']
+        modTypeId:
+          type: [integer, 'null']
+        clientId:
+          type: [string, 'null']
+        modType:
+          type: [string, 'null']
+        modTags:
+          type: [array, 'null']
+          items:
+            type: string
+        modTagIds:
+          type: [array, 'null']
+          items:
+            type: integer
+        modTagNames:
+          type: [array, 'null']
+          items:
+            type: string
+        metaData:
+          type: [object, 'null']
+        modStatusId:
+          type: [integer, 'null']
+        modStatus:
+          type: [string, 'null']
+          enum: [Published, Featured, Unlisted, Draft]
+          description: |-
+            The captures only carry 2/"Published" (every created mod) and
+            5/"Featured" (the AOM Featured rows); any other stored id
+            renders Published.
+        modStatusMessage:
+          type: [string, 'null']
+        modVisibility:
+          type: [string, 'null']
+          enum: [Public, Private, Unlisted]
+        creatorId:
+          type: [integer, 'null']
+        creatorName:
+          type: [string, 'null']
+        creatorAvatarUrl:
+          type: [string, 'null']
+        isOwner:
+          type: boolean
+        isLoggedOn:
+          type: boolean
+        allowDiscussion:
+          type: boolean
+        discourseUrl:
+          type: [string, 'null']
+        createDate:
+          type: string
+          format: date-time
+        lastUpdate:
+          type: string
+          format: date-time
+        updateAvailable:
+          type: boolean
+        modFileSize:
+          type: number
+        modDiskSize:
+          type: [number, 'null']
+        popular:
+          type: [integer, 'null']
+        downloads:
+          type: [integer, 'null']
+        installs:
+          type: [integer, 'null']
+        likes:
+          type: [integer, 'null']
+        userLiked:
+          type: [boolean, 'null']
+        ratings:
+          $ref: '#/components/schemas/Ratings'
+        currentRating:
+          type: number
+        userDownloaded:
+          type: [boolean, 'null']
+        userInstalled:
+          type: boolean
+        userFlagged:
+          type: [boolean, 'null']
+        userRating:
+          type: [number, 'null']
+        userReview:
+          type: [string, 'null']
+        positiveRatings:
+          type: integer
+        totalRatings:
+          type: integer
+        thumbnail:
+          type: string
+        fileUrl:
+          type: [string, 'null']
+        imageUrls:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/ModImage'
+        thirtyDayPopular:
+          type: [integer, 'null']
+        sortName:
+          type: [string, 'null']
+        sendNotifications:
+          type: boolean
+
+    Mod:
+      description: A mod entry as returned in `modList` arrays.
+      allOf:
+        - $ref: '#/components/schemas/ModMetaData'
+
+    ModList:
+      type: object
+      properties:
+        searchParams:
+          $ref: '#/components/schemas/SearchParams'
+        modList:
+          type: array
+          items:
+            $ref: '#/components/schemas/Mod'
+        totalCount:
+          type: [integer, 'null']
+        isLoggedOn:
+          type: boolean
+        errorCode:
+          type: integer
+          description: |
+            -1 on success. Every capture of a list endpoint carries it, even
+            when the response returns data.
+        errorMessage:
+          type: string
+          description: Empty on success.
+      required: [searchParams, modList, totalCount, isLoggedOn, errorCode, errorMessage]
+
+    SearchParams:
+      type: object
+      description: |
+        Echo of the request as the endpoint resolved it. Every field is always
+        present; the v1 echo keeps the raw request instead of resolving the
+        sort/order defaults.
+      properties:
+        q:
+          type: string
+          description: Search query; always a string ("" when unset).
+        creator:
+          type: [string, 'null']
+          description: Creator filter; null when the request omitted it.
+        filter:
+          type: integer
+          description: Mod type filter id (0 means no filter).
+        sort:
+          type: [string, 'null']
+          enum: ["", popular, createDate, lastUpdate, downloads, rating, recentpopular, subscribers, creatorName, modName, null]
+        order:
+          type: [string, 'null']
+          enum: ["", ASC, DESC, asc, desc, null]
+          description: The v4 echo upper-cases the value the client sent.
+        start:
+          type: integer
+          description: Echo of start (default 1); the page number.
+        count:
+          type: integer
+          description: Resolved page size (0 means no limit in the request).
+        game:
+          type: integer
+        modid:
+          type: [string, 'null']
+          description: |
+            Mod id filter. The v4 echo always renders it as a JSON string, "0"
+            when unset, even when the client sent the number 0. The legacy v1
+            echo keeps null when the request omitted it.
+      required: [q, creator, filter, sort, order, start, count, game, modid]
+
+    # Request schemas
+    FindModsRequest:
+      type: object
+      required:
+        - game
+      properties:
+        game:
+          type: integer
+          description: Game ID (1, 2, 3, 4, 1001)
+        start:
+          type: integer
+          default: 1
+          minimum: 0
+        count:
+          type: integer
+          default: 30
+          minimum: 0
+        order:
+          type: string
+          enum: ["", asc, desc, ASC, DESC]
+          default: desc
+        sort:
+          type: string
+          enum: ["", popular, createDate, lastUpdate, downloads, rating, recentpopular, subscribers, modName]
+          default: popular
+        q:
+          type: string
+          default: ""
+        filter:
+          type: integer
+          default: 0
+        creator:
+          type: [string, 'null']
+        modid:
+          description: Mod ID filter; clients send either an integer (0 = none) or an empty string
+          oneOf:
+            - type: integer
+            - type: string
+        status:
+          type: [string, 'null']
+        tags:
+          description: Tag/type IDs; observed as integers, and as strings such as "-14"
+          type: [array, 'null']
+          items:
+            oneOf:
+              - type: integer
+              - type: string
+
+    FindModsRequestV1:
+      type: object
+      required:
+        - game
+      properties:
+        game:
+          type: integer
+        start:
+          type: integer
+          default: 1
+        count:
+          type: integer
+          default: 45
+        order:
+          type: string
+          enum: ["", ASC, DESC]
+          default: DESC
+        sort:
+          type: string
+          enum: ["", popular, createDate, lastUpdate, downloads, rating]
+          default: popular
+        q:
+          type: string
+          default: ""
+        filter:
+          type: integer
+          default: 0
+        time:
+          type: string
+          description: Timestamp for pagination
+
+    InstalledModsRequest:
+      description: |
+        Same filters as the Find request, except that the server default count
+        is 1000 rather than 30. Native clients usually send only `game` (AOE3,
+        AOM), while the AOE4 client and the website send the full filter body.
+      type: object
+      required:
+        - game
+      properties:
+        game:
+          type: integer
+        start:
+          type: integer
+          default: 1
+        count:
+          type: integer
+          default: 1000
+        order:
+          type: string
+          enum: ["", ASC, DESC, asc, desc]
+          default: desc
+        sort:
+          type: string
+          enum: ["", popular, createDate, lastUpdate, downloads, rating, recentpopular, subscribers, modName]
+          default: popular
+        q:
+          type: string
+          default: ""
+        filter:
+          type: integer
+          default: 0
+        creator:
+          type: [string, 'null']
+          description: The echo resolves it to "" when the body omits it.
+        modid:
+          description: Mod ID filter; clients send either an integer (0 = none) or an empty string
+          oneOf:
+            - type: integer
+            - type: string
+        status:
+          type: [string, 'null']
+        tags:
+          description: Tag/type IDs; observed as integers, and as strings such as "-14"
+          type: [array, 'null']
+          items:
+            oneOf:
+              - type: integer
+              - type: string
+
+    MyModsRequest:
+      type: object
+      required:
+        - game
+      properties:
+        game:
+          type: integer
+        start:
+          type: integer
+          default: 1
+        count:
+          type: integer
+          default: 45
+        order:
+          type: string
+          enum: ["", ASC, DESC]
+          default: DESC
+        sort:
+          type: string
+          enum: ["", popular, createDate, lastUpdate, downloads, rating]
+          default: popular
+        q:
+          type: string
+          default: ""
+        filter:
+          type: integer
+          default: 0
+        time:
+          type: string
+
+    RateModRequest:
+      type: object
+      required:
+        - modId
+        - rating
+      properties:
+        modId:
+          type: integer
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+
+    FlagModRequest:
+      type: object
+      description: Report/flag a mod. `id` is the mod ID and `stringValue` is the reason label.
+      required:
+        - id
+        - stringValue
+      properties:
+        id:
+          type: integer
+          description: Mod ID
+        stringValue:
+          type: string
+          examples: [Poor Performance]
+        boolValue:
+          type: boolean
+
+    InstallModRequest:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: integer
+          description: Mod ID
+
+    UninstallModRequest:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: integer
+          description: Mod ID
+
+    CreateModRequestV1:
+      type: object
+      description: |
+        Multipart body of the legacy Create. The live capture of the AOE2
+        client carries these field names exactly (mixed casing included):
+        `modFiles` is the zip archive, `modImages` the screenshots paired
+        with `ImageMetaData` by file name, and the scalar fields spell
+        `ModName`, `GameTitleId`, `ModType`, `modVisibility` and `ChangeList`.
+        An `imageFileSize` of the metadata entry is a string. An update adds
+        `ModId` and re-declares the existing image by its `imageId` with
+        absolute URLs (and carries no file parts).
+      properties:
+        ModId:
+          type: integer
+          description: Present only when updating an existing owned mod (same id echoed).
+        ModName:
+          type: string
+        GameTitleId:
+          type: integer
+        ModType:
+          type: integer
+        Description:
+          type: string
+        modVisibility:
+          type: string
+          enum: [Public, Private, Unlisted]
+        ChangeList:
+          type: string
+        ImageMetaData:
+          type: string
+          description: JSON array of `{"displayIndex":0,"imageFileSize":"25261","imageName":"_preview-icon.jpg"}`.
+        modImages:
+          type: string
+          format: binary
+        modFiles:
+          type: string
+          format: binary
+
+    DeletedModResponseV1:
+      type: object
+      description: The envelope the legacy Delete answers. resultValue is the string "true".
+      properties:
+        errorCode:
+          type: integer
+        errorMessage:
+          type: string
+        resultKey:
+          type: string
+          examples: [Deleted]
+        resultValue:
+          type: string
+          examples: ["true"]
+        resultJson:
+          type: [string, 'null']
+
+    FeaturedModsRequest:
+      type: object
+      required:
+        - game
+      properties:
+        q:
+          type: string
+          default: ""
+        game:
+          type: integer
+          default: 1001
+        modid:
+          description: Mod ID filter; clients send either an integer (0 = none) or an empty string
+          oneOf:
+            - type: integer
+            - type: string
+        filter:
+          type: integer
+          default: 0
+        status:
+          type: string
+          default: ""
+        tags:
+          type: array
+          items:
+            oneOf:
+              - type: integer
+              - type: string
+          default: []
+        sort:
+          type: string
+          enum: [recentpopular, popular, createDate, lastUpdate]
+          default: popular
+        order:
+          type: string
+          enum: [ASC, DESC]
+          default: DESC
+        start:
+          type: integer
+          default: 1
+        count:
+          type: integer
+          default: 10
+
+    MyModsRequestV4:
+      type: object
+      required: [game]
+      properties:
+        game:
+          type: integer
+        start:
+          type: integer
+          default: 1
+        count:
+          type: integer
+          default: 10
+          maximum: 500
+          description: |
+            A body without count uses 10. Every explicit value is capped at
+            500 in the page and echoed as 500: the captures send 12, 1000 and
+            20000 and all answer 500.
+        order:
+          type: string
+          enum: [ASC, DESC]
+          default: DESC
+        sort:
+          type: string
+          enum: [popular, createDate, lastUpdate, downloads, rating]
+          default: popular
+        q:
+          type: string
+          default: ""
+        filter:
+          type: integer
+          default: 0
+        modid:
+          type: string
+          default: ""
+          description: Mod id filter as a string; "" means no filter.
+
+    PublishRequest:
+      type: object
+      required: [gameTitleId, modName]
+      properties:
+        modId:
+          type: integer
+          description: Present only when updating an existing owned mod.
+        gameTitleId:
+          type: integer
+        modType:
+          type: integer
+          description: |
+            Mod type id, stored as sent: the Tags catalogue of the game is not
+            consulted, so an id it does not list still attaches (the AOE4
+            client uploads type 6 "Extension" for game 4, whose catalogue stops
+            at 5). A create without tags also gets the auto tag 26 ("Other").
+        modName:
+          type: string
+          description: |
+            The AOE4 client sends a JSON localization map such as
+            {"es":"moddisplayname"}; the plain string is stored (the "en" entry
+            wins, otherwise the first entry in the request order).
+        description:
+          type: string
+          description: Same JSON localization map handling as modName.
+        changeList:
+          type: string
+          description: |
+            Stored prefixed with the mod-update-date header of the day when it
+            is not empty. An update without one bumps modVersion by 0.1 and
+            flips updateAvailable for subscribers of the previous version.
+        modVisibility:
+          type: string
+          enum: [Public, Private, Unlisted]
+          default: Public
+          description: Read case-insensitively; the AOE4 client sends lowercase.
+        modDiscussion:
+          type: boolean
+          default: false
+        modTags:
+          type: array
+          description: Repeated field or one comma-separated value.
+          items:
+            type: integer
+        ImageMetaData:
+          type: string
+          description: |
+            JSON array of {imageId, displayIndex, imageName, imageThumbnail}.
+            An entry is paired with the modImages part of the same file name;
+            an entry without an upload keeps the thumbnail the client sent.
+            The website adds its own rules to this form: description required,
+            1-5 images from the picker's formats, at most 7 tags and a .zip
+            archive.
+        modImages:
+          type: array
+          items:
+            type: string
+            format: binary
+        modFiles:
+          type: string
+          format: binary
+
+    ReviewsRequest:
+      type: object
+      required: [modId]
+      properties:
+        modId:
+          type: string
+          description: Mod id as a string.
+        page:
+          type: integer
+          default: 1
+          description: Read as sent; not validated against a minimum.
+        count:
+          type: integer
+          default: 5
+          description: Read as sent; not validated against a maximum.
+        ratingNum:
+          type: integer
+          description: Star filter, passed through without a 1..5 check (a capture sends 7).
+        ratingLabel:
+          type: string
+          description: Accepted for compatibility; unused by the query.
+
+    DeleteModRequest:
+      type: object
+      required: [modId]
+      properties:
+        modId:
+          type: integer
+          description: Mod id as a number (Report carries it as a string).
+
+    ReportModRequest:
+      type: object
+      required: [modId, concernCategoryId, concernCategoryName]
+      properties:
+        modId:
+          type: string
+          description: Mod id as a string, unlike Delete.
+        concernCategoryId:
+          type: string
+        concernCategoryName:
+          type: string
+        concernContent:
+          type: string
+
+    DetailRequestV1:
+      type: object
+      required: [modid]
+      properties:
+        modid:
+          description: Mod id; clients send either an integer or its string form.
+          oneOf:
+            - type: integer
+            - type: string
+        game:
+          type: integer
+          description: Optional; the capture sends only modid and the value is unused.
+
+    # Response schemas
+    SubscribeResponse:
+      type: object
+      properties:
+        downloadUrl:
+          type: string
+          format: uri
+        downloadCount:
+          type: integer
+        installCount:
+          type: integer
+        gameTitleId:
+          type: integer
+        fileCRC:
+          type: string
+
+    UnsubscribeResponse:
+      type: boolean
+
+    RateModResponse:
+      type: object
+      description: |
+        The envelope the captures answer: statusCode and responseMessage are
+        always null and playFabResponse carries the refreshed aggregate.
+      properties:
+        statusCode:
+          type: 'null'
+          description: Always null.
+        responseMessage:
+          type: 'null'
+          description: Always null.
+        playFabResponse:
+          $ref: '#/components/schemas/Ratings'
+      required: [statusCode, responseMessage, playFabResponse]
+
+    Ratings:
+      description: |
+        Rating aggregate of a mod. The captures of November 2026 carry only
+        average and totalCount: the per-star counters and the two
+        favourable-review blocks of the August captures are gone. The block is
+        always an object, even when the mod has no ratings.
+      type: object
+      properties:
+        rating:
+          type: object
+          properties:
+            average:
+              type: number
+            totalCount:
+              type: integer
+        reviewsCount:
+          type: integer
+
+    FlagResponse:
+      type: object
+      properties:
+        errorCode:
+          type: integer
+        errorMessage:
+          type: string
+        resultKey:
+          type: string
+        resultValue:
+          type: string
+        resultJson:
+          type: [object, 'null']
+
+    InstallModResponse:
+      type: object
+      properties:
+        contentType:
+          type: [string, 'null']
+        serializerSettings:
+          type: [object, 'null']
+        statusCode:
+          type: [integer, 'null']
+        value:
+          $ref: '#/components/schemas/SubscribeResponse'
+
+    UninstallModResponse:
+      type: object
+      properties:
+        contentType:
+          type: [string, 'null']
+        serializerSettings:
+          type: [object, 'null']
+        statusCode:
+          type: [integer, 'null']
+        value:
+          type: boolean
+
+    DownloadResponse:
+      type: object
+      properties:
+        downloadUrl:
+          type: string
+          format: uri
+        downloadCount:
+          type: integer
+        installCount:
+          type: integer
+        gameTitleId:
+          type: integer
+        fileCRC:
+          type: string
+
+    DetailResponse:
+      type: object
+      description: |
+        The v4 detail. Unlike a list row, the handler fills the capture
+        defaults: modVersion 1.1, verifiedVersion and modStatusMessage empty
+        strings, and modTags null (the ids live in modTagIds).
+      properties:
+        modId:
+          type: integer
+        gameTitleId:
+          type: integer
+        gameTitleName:
+          type: string
+        modName:
+          type: string
+        description:
+          type: string
+        modDescription:
+          type: string
+        changeList:
+          type: string
+        modVersion:
+          type: number
+        verifiedVersion:
+          type: string
+        modTypeId:
+          type: [integer, 'null']
+        clientId:
+          type: [string, 'null']
+        modType:
+          type: [string, 'null']
+        modTags:
+          type: [array, 'null']
+          items:
+            type: string
+        modTagIds:
+          type: [array, 'null']
+          items:
+            type: integer
+        modTagNames:
+          type: [array, 'null']
+          items:
+            type: string
+        metaData:
+          anyOf:
+            - $ref: '#/components/schemas/ModMetaData'
+            - type: 'null'
+        modStatusId:
+          type: integer
+        modStatus:
+          type: string
+        modStatusMessage:
+          type: string
+        modVisibility:
+          type: [string, 'null']
+        creatorId:
+          type: [integer, 'null']
+        creatorName:
+          type: [string, 'null']
+        creatorAvatarUrl:
+          type: [string, 'null']
+        isOwner:
+          type: [boolean, 'null']
+        isLoggedOn:
+          type: boolean
+        allowDiscussion:
+          type: boolean
+        discourseUrl:
+          type: [string, 'null']
+        createDate:
+          type: [string, 'null']
+          format: date-time
+        lastUpdate:
+          type: [string, 'null']
+          format: date-time
+        updateAvailable:
+          type: [boolean, 'null']
+        modFileSize:
+          type: [number, 'null']
+        modDiskSize:
+          type: [number, 'null']
+        popular:
+          type: [integer, 'null']
+        downloads:
+          type: [integer, 'null']
+        installs:
+          type: [integer, 'null']
+        likes:
+          type: [integer, 'null']
+        userLiked:
+          type: [boolean, 'null']
+        ratings:
+          $ref: '#/components/schemas/Ratings'
+        currentRating:
+          type: number
+        userDownloaded:
+          type: [boolean, 'null']
+        userInstalled:
+          type: [boolean, 'null']
+        userFlagged:
+          type: [boolean, 'null']
+        userRating:
+          type: [number, 'null']
+        userReview:
+          type: [string, 'null']
+        positiveRatings:
+          type: integer
+        totalRatings:
+          type: integer
+        thumbnail:
+          type: [string, 'null']
+        fileUrl:
+          type: [string, 'null']
+        imageUrls:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/ModImage'
+        thirtyDayPopular:
+          type: [integer, 'null']
+        sortName:
+          type: [string, 'null']
+        sendNotifications:
+          type: boolean
+
+    ModIdResult:
+      type: object
+      description: |
+        Envelope of Publish and the legacy Create. The new or updated id travels
+        in resultValue as a string and resultJson is always null.
+      properties:
+        errorCode:
+          type: integer
+          examples: [0]
+        errorMessage:
+          type: string
+          examples: ["0"]
+        resultKey:
+          type: string
+          examples: [ModId]
+        resultValue:
+          type: string
+          examples: ["593779"]
+        resultJson:
+          type: 'null'
+      required: [errorCode, errorMessage, resultKey, resultValue]
+
+    Review:
+      type: object
+      properties:
+        helpfulNegative:
+          type: integer
+        helpfulnessVotes:
+          type: integer
+        helpfulPositive:
+          type: integer
+        isInstalled:
+          type: boolean
+        itemId:
+          type: [string, 'null']
+        itemVersion:
+          type: string
+        locale:
+          type: [string, 'null']
+        rating:
+          type: integer
+        reviewerId:
+          type: [string, 'null']
+        reviewId:
+          type: [string, 'null']
+        reviewText:
+          type: string
+        submitted:
+          type: string
+          format: date-time
+        title:
+          type: string
+        reviewerName:
+          type: string
+        avatarUrl:
+          type: string
+
+    ReviewsResponse:
+      type: object
+      properties:
+        continuationToken:
+          type: [string, 'null']
+          description: Always null.
+        reviews:
+          type: array
+          items:
+            $ref: '#/components/schemas/Review'
+        totalCount:
+          type: [integer, 'null']
+          description: Null when the mod has no reviews.
+      required: [continuationToken, reviews, totalCount]
+
+    PollSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        gameId:
+          type: integer
+        created:
+          type: string
+          format: date-time
+        startDateTime:
+          type: string
+          format: date-time
+        endDateTime:
+          type: string
+          format: date-time
+        expireDateTime:
+          type: string
+          format: date-time
+        metadata:
+          type: string
+        icon:
+          type: [string, 'null']
+
+    PollList:
+      type: array
+      items:
+        $ref: '#/components/schemas/PollSummary'
+
+    PollOption:
+      type: object
+      properties:
+        id:
+          type: integer
+        value:
+          type: string
+        voteCount:
+          type: integer
+        userVote:
+          type: boolean
+
+    PollQuestion:
+      type: object
+      properties:
+        id:
+          type: integer
+        order:
+          type: integer
+        content:
+          type: string
+        type:
+          type: string
+          enum: [multiple-choice, text]
+        maxOptions:
+          type: integer
+        userVoted:
+          type: boolean
+        totalVotes:
+          type: integer
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/PollOption'
+
+    Poll:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        pollId:
+          type: string
+          format: uuid
+          description: Same value as id.
+        gameId:
+          type: integer
+        createdBy:
+          type: string
+        created:
+          type: string
+          format: date-time
+        startDateTime:
+          type: string
+          format: date-time
+        endDateTime:
+          type: string
+          format: date-time
+        expireDateTime:
+          type: string
+          format: date-time
+        metadata:
+          type: string
+        isDefinition:
+          type: boolean
+        totalVotes:
+          type: integer
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PollQuestion'
+
+    TextModerationRequest:
+      type: object
+      required:
+        - conversationId
+        - textContent
+        - language
+        - textType
+      properties:
+        conversationId:
+          type: string
+        textContent:
+          type: string
+        language:
+          type: string
+        textType:
+          type: string
+          enum: [SanitisationUsername, SanitisationInput]
+        includeResponse:
+          type: boolean
+          default: false
+
+    TextModerationResponse:
+      type: object
+      description: |
+        The observed answer: every result is Allow and translationAvailable is
+        false. The captures answer Allow for every input, so no policy engine
+        is modelled.
+      properties:
+        filterResult:
+          type: string
+          enum: [Allow, Block, Review]
+          examples: [Allow]
+        familyFriendlyResult:
+          type: string
+          enum: [Allow, Block, Review]
+          examples: [Allow]
+        mediumResult:
+          type: string
+          enum: [Allow, Block, Review]
+          examples: [Allow]
+        matureResult:
+          type: string
+          enum: [Allow, Block, Review]
+          examples: [Allow]
+        maturePlusResult:
+          type: string
+          enum: [Allow, Block, Review]
+          examples: [Allow]
+        translationAvailable:
+          type: boolean
+          examples: [false]
+        moderatedText:
+          type: string
+          description: Echo of the request textContent.
+        language:
+          type: string
+          description: |
+            The detected language, not the echo of the request: "Test Mod"
+            answers "en" even when the input language is "es-ES". The base
+            subtag of the input tag is the deterministic stand-in.
+      required: [filterResult, familyFriendlyResult, mediumResult, matureResult, maturePlusResult, translationAvailable, moderatedText, language]
+
+    ErrorResponse:
+      type: object
+      properties:
+        errorCode:
+          type: integer
+          description: |
+            Not an HTTP status: 400 for a bad request, 900 for an
+            unauthenticated request, 404 for a missing resource and 500 for an
+            internal error.
+        errorMessage:
+          type: string
+        isLoggedOn:
+          type: boolean
+          description: Only the 401 carries it (false); the other errors omit it.
+      required: [errorCode, errorMessage]
+
+    ProblemDetails:
+      type: object
+      description: |
+        RFC 9110 body the v4 Detail answers with when the mod does not exist.
+        traceId is a W3C trace id: two 16-byte and 8-byte random groups between
+        the version and flag bytes.
+      properties:
+        type:
+          type: string
+          format: uri
+          description: Link to the RFC 9110 section of the status.
+        title:
+          type: string
+        status:
+          type: integer
+        traceId:
+          type: string
+
+    # Legacy (v1) schemas. The v1 surface renders the same mods with a different
+    # contract than v4: fewer fields, different nullability, ratings dropped and
+    # tag ids rendered as strings.
+    LegacyMod:
+      description: One v1 modList row.
+      type: object
+      properties:
+        modId:
+          type: integer
+        gameTitleId:
+          type: [integer, 'null']
+          description: Always null in the v1 render.
+        gameTitleName:
+          type: [string, 'null']
+          description: Always null in the v1 render.
+        modName:
+          type: string
+        description:
+          type: [string, 'null']
+        modDescription:
+          type: [string, 'null']
+        changeList:
+          type: [string, 'null']
+          description: Always null in a v1 list.
+        modVersion:
+          type: number
+          description: As stored; the v1 surface applies no 1.1 default.
+        verifiedVersion:
+          type: [string, 'null']
+        modTypeId:
+          type: [integer, 'null']
+          description: Always null in the v1 render.
+        clientId:
+          type: [string, 'null']
+          description: Always null in the v1 render.
+        modType:
+          type: [string, 'null']
+        modTags:
+          type: array
+          items:
+            type: string
+          description: The tag ids rendered as strings.
+        modTagIds:
+          type: [array, 'null']
+          items:
+            type: integer
+          description: Always null; the ids live in modTags.
+        modTagNames:
+          type: [array, 'null']
+          items:
+            type: string
+        metaData:
+          type: 'null'
+          description: Always null in a v1 list.
+        modStatusId:
+          type: [integer, 'null']
+          description: Always null in a v1 list.
+        modStatus:
+          type: [string, 'null']
+        modStatusMessage:
+          type: [string, 'null']
+          description: Always null in the v1 render.
+        modVisibility:
+          type: [string, 'null']
+        creatorId:
+          type: [integer, 'null']
+          description: Always null in the v1 render.
+        creatorName:
+          type: [string, 'null']
+        creatorAvatarUrl:
+          type: [string, 'null']
+        isOwner:
+          type: boolean
+        isLoggedOn:
+          type: boolean
+        allowDiscussion:
+          type: boolean
+        discourseUrl:
+          type: [string, 'null']
+        createDate:
+          type: string
+          format: date-time
+        lastUpdate:
+          type: string
+          format: date-time
+        updateAvailable:
+          type: boolean
+        modFileSize:
+          type: [number, 'null']
+        modDiskSize:
+          type: [number, 'null']
+          description: Always null in a v1 list.
+        popular:
+          type: [integer, 'null']
+          description: Always null in a v1 list.
+        downloads:
+          type: [integer, 'null']
+        installs:
+          type: [integer, 'null']
+        likes:
+          type: [integer, 'null']
+        userLiked:
+          type: [boolean, 'null']
+        ratings:
+          type: 'null'
+          description: Always null in the v1 render.
+        currentRating:
+          type: number
+          description: Always 0 in the v1 render.
+        userDownloaded:
+          type: [boolean, 'null']
+        userInstalled:
+          type: boolean
+        userFlagged:
+          type: [boolean, 'null']
+        userRating:
+          type: [number, 'null']
+        userReview:
+          type: [string, 'null']
+        positiveRatings:
+          type: integer
+          description: Always 0 in the v1 render.
+        totalRatings:
+          type: integer
+          description: Always 0 in the v1 render.
+        thumbnail:
+          type: string
+        fileUrl:
+          type: [string, 'null']
+          description: Always null in a v1 list.
+        imageUrls:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/ModImage'
+          description: Always null in a v1 list.
+        thirtyDayPopular:
+          type: [integer, 'null']
+          description: Always null in a v1 list.
+        sortName:
+          type: [string, 'null']
+          description: Always null in a v1 list.
+        sendNotifications:
+          type: boolean
+
+    LegacyModList:
+      type: object
+      properties:
+        searchParams:
+          $ref: '#/components/schemas/SearchParams'
+        modList:
+          type: array
+          items:
+            $ref: '#/components/schemas/LegacyMod'
+        totalCount:
+          type: [integer, 'null']
+          description: |
+            Null on an empty page, and always null for the v1 My endpoint.
+        isLoggedOn:
+          type: boolean
+        errorCode:
+          type: integer
+          description: -1 on success.
+        errorMessage:
+          type: string
+          description: Empty on success.
+
+    LegacyDetail:
+      description: |
+        The v1 Detail body. The outer object carries identity, texts, type,
+        status and the image list; every viewer field, date, size and counter is
+        null or zero, and isLoggedOn is false even for the owner. The nested
+        metaData snapshot carries the populated values.
+      type: object
+      properties:
+        modId:
+          type: integer
+        gameTitleId:
+          type: integer
+        gameTitleName:
+          type: [string, 'null']
+          description: Always null.
+        modName:
+          type: string
+        description:
+          type: string
+        modDescription:
+          type: string
+        changeList:
+          type: string
+        modVersion:
+          type: number
+        verifiedVersion:
+          type: [string, 'null']
+        modTypeId:
+          type: [integer, 'null']
+        clientId:
+          type: [string, 'null']
+          description: Always null.
+        modType:
+          type: [string, 'null']
+        modTags:
+          type: array
+          items:
+            type: string
+          description: The tag ids rendered as strings.
+        modTagIds:
+          type: [array, 'null']
+          items:
+            type: integer
+          description: Always null.
+        modTagNames:
+          type: [array, 'null']
+          items:
+            type: string
+        metaData:
+          anyOf:
+            - $ref: '#/components/schemas/LegacyMeta'
+            - type: 'null'
+        modStatusId:
+          type: integer
+        modStatus:
+          type: string
+        modStatusMessage:
+          type: string
+        modVisibility:
+          type: [string, 'null']
+          description: Always null in the outer object.
+        creatorId:
+          type: [integer, 'null']
+          description: Always null in the outer object.
+        creatorName:
+          type: [string, 'null']
+          description: Always null in the outer object.
+        creatorAvatarUrl:
+          type: [string, 'null']
+          description: Always null in the outer object.
+        isOwner:
+          type: [boolean, 'null']
+          description: Always null; the snapshot carries the truth.
+        isLoggedOn:
+          type: boolean
+          description: Always false; the snapshot carries the truth.
+        allowDiscussion:
+          type: boolean
+        discourseUrl:
+          type: [string, 'null']
+        createDate:
+          type: [string, 'null']
+          format: date-time
+          description: Always null in the outer object.
+        lastUpdate:
+          type: [string, 'null']
+          format: date-time
+          description: Always null in the outer object.
+        updateAvailable:
+          type: [boolean, 'null']
+        modFileSize:
+          type: [number, 'null']
+          description: Always null in the outer object.
+        modDiskSize:
+          type: [number, 'null']
+          description: Always null in the outer object.
+        popular:
+          type: [integer, 'null']
+          description: Always null.
+        downloads:
+          type: [integer, 'null']
+          description: Always null in the outer object.
+        installs:
+          type: [integer, 'null']
+          description: Always null in the outer object.
+        likes:
+          type: [integer, 'null']
+          description: Always null in the outer object.
+        userLiked:
+          type: [boolean, 'null']
+          description: Always null in the outer object.
+        ratings:
+          type: 'null'
+          description: Always null.
+        currentRating:
+          type: number
+          description: Always 0.
+        userDownloaded:
+          type: [boolean, 'null']
+        userInstalled:
+          type: [boolean, 'null']
+        userFlagged:
+          type: [boolean, 'null']
+        userRating:
+          type: [number, 'null']
+        userReview:
+          type: [string, 'null']
+        positiveRatings:
+          type: integer
+          description: Always 0.
+        totalRatings:
+          type: integer
+          description: Always 0.
+        thumbnail:
+          type: [string, 'null']
+          description: Always null in the outer object.
+        fileUrl:
+          type: [string, 'null']
+          description: Always null.
+        imageUrls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModImage'
+        thirtyDayPopular:
+          type: [integer, 'null']
+          description: Always null.
+        sortName:
+          type: [string, 'null']
+          description: Always null.
+        sendNotifications:
+          type: boolean
+
+    LegacyMeta:
+      description: |
+        The snapshot the v1 Detail nests in metaData. It keeps the viewer state,
+        sizes and counters, but never the changeList, the image list, the file,
+        the discussion block, the rating aggregates or the popularity fields.
+      type: object
+      properties:
+        modId:
+          type: integer
+        gameTitleId:
+          type: [integer, 'null']
+          description: Always null.
+        gameTitleName:
+          type: [string, 'null']
+          description: Always null.
+        modName:
+          type: string
+        description:
+          type: [string, 'null']
+        modDescription:
+          type: [string, 'null']
+        changeList:
+          type: [string, 'null']
+          description: Always null.
+        modVersion:
+          type: number
+        verifiedVersion:
+          type: [string, 'null']
+        modTypeId:
+          type: [integer, 'null']
+          description: Always null.
+        clientId:
+          type: [string, 'null']
+          description: Always null.
+        modType:
+          type: [string, 'null']
+        modTags:
+          type: array
+          items:
+            type: string
+        modTagIds:
+          type: [array, 'null']
+          items:
+            type: integer
+          description: Always null.
+        modTagNames:
+          type: [array, 'null']
+          items:
+            type: string
+        metaData:
+          type: 'null'
+          description: Always null.
+        modStatusId:
+          type: [integer, 'null']
+          description: Always null.
+        modStatus:
+          type: [string, 'null']
+        modStatusMessage:
+          type: [string, 'null']
+          description: Always null.
+        modVisibility:
+          type: [string, 'null']
+        creatorId:
+          type: [integer, 'null']
+          description: Always null.
+        creatorName:
+          type: [string, 'null']
+        creatorAvatarUrl:
+          type: [string, 'null']
+        isOwner:
+          type: [boolean, 'null']
+        isLoggedOn:
+          type: boolean
+        allowDiscussion:
+          type: boolean
+          description: Always false.
+        discourseUrl:
+          type: [string, 'null']
+          description: Always null.
+        createDate:
+          type: [string, 'null']
+          format: date-time
+        lastUpdate:
+          type: [string, 'null']
+          format: date-time
+        updateAvailable:
+          type: [boolean, 'null']
+        modFileSize:
+          type: [number, 'null']
+        modDiskSize:
+          type: [number, 'null']
+        popular:
+          type: [integer, 'null']
+          description: Always null.
+        downloads:
+          type: [integer, 'null']
+        installs:
+          type: [integer, 'null']
+        likes:
+          type: [integer, 'null']
+        userLiked:
+          type: [boolean, 'null']
+        ratings:
+          type: 'null'
+          description: Always null.
+        currentRating:
+          type: number
+          description: Always 0.
+        userDownloaded:
+          type: [boolean, 'null']
+        userInstalled:
+          type: [boolean, 'null']
+        userFlagged:
+          type: [boolean, 'null']
+        userRating:
+          type: [number, 'null']
+        userReview:
+          type: [string, 'null']
+        positiveRatings:
+          type: integer
+          description: Always 0.
+        totalRatings:
+          type: integer
+          description: Always 0.
+        thumbnail:
+          type: string
+        fileUrl:
+          type: [string, 'null']
+          description: Always null.
+        imageUrls:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/ModImage'
+        thirtyDayPopular:
+          type: [integer, 'null']
+          description: Always null.
+        sortName:
+          type: [string, 'null']
+          description: Always null.
+        sendNotifications:
+          type: boolean
+
+  # ---------------------------------------------------------------------------
+  # Documented-only schemas (LibreMatch wiki)
+  # ---------------------------------------------------------------------------
+
+    WikiObject:
+      type: object
+      additionalProperties: true
+      description: Response documented by the LibreMatch wiki without a published field-level schema. The operation description records the documented request and response fields that are known.
+    V1DownloadRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        boolValue:
+          type: boolean
+    V1DownloadValue:
+      type: object
+      properties:
+        downloadUrl:
+          type: string
+          format: uri
+    V1DownloadResponse:
+      type: object
+      properties:
+        value:
+          $ref: '#/components/schemas/V1DownloadValue'
+    V1ModIdRequest:
+      type: object
+      properties:
+        modid:
+          type: integer
+          format: int64
+    MatchSummary:
+      type: object
+      properties:
+        gameId:
+          type: string
+        matchId:
+          type:
+            - integer
+            - 'null'
+        profileId:
+          type: integer
+        userName:
+          type:
+            - string
+            - 'null'
+        avatarUrl:
+          type:
+            - string
+            - 'null'
+        dateTime:
+          type: string
+        matchLength:
+          type: number
+        playerCount:
+          type: integer
+        victoryResultID:
+          type: integer
+        mapType:
+          type:
+            - string
+            - 'null'
+        civilizationID:
+          type: integer
+        civilization:
+          type:
+            - string
+            - 'null'
+        winLoss:
+          type:
+            - string
+            - 'null'
+    MatchPlayer:
+      type: object
+      properties:
+        userId:
+          type: string
+        profileId:
+          type: integer
+        userName:
+          type: string
+        avatarUrl:
+          type:
+            - string
+            - 'null'
+        elo:
+          type:
+            - number
+            - 'null'
+        playerStanding:
+          type: number
+        isHuman:
+          type: boolean
+        team:
+          type: integer
+        civName:
+          type: string
+        winLoss:
+          type: string
+        matchReplayAvailable:
+          type: boolean
+    MatchDetail:
+      type: object
+      required:
+        - matchSummary
+        - playerList
+        - statusCode
+      properties:
+        matchSummary:
+          $ref: '#/components/schemas/MatchSummary'
+        playerList:
+          type: array
+          items:
+            $ref: '#/components/schemas/MatchPlayer'
+        statusCode:
+          type: integer
+        errorMessage:
+          type:
+            - string
+            - 'null'
+    GameStatsRequest:
+      type: object
+      description: Request fields the official website sends to the GameStats family; a given operation uses a subset.
+      properties:
+        profileId:
+          type: integer
+          format: int64
+        game:
+          type: string
+        matchType:
+          type:
+            - integer
+            - 'null'
+        gamertag:
+          type: string
+        player:
+          type: string
+        gameId:
+          type:
+            - integer
+            - string
+        gameType:
+          type: string
+        page:
+          type: integer
+        recordCount:
+          type: integer
+        sortColumn:
+          type: string
+        sortDirection:
+          type: string
+        matchId:
+          type: integer
+          format: int64
+    LeaderboardRequest:
+      type: object
+      description: Filters the official website sends to the leaderboard family.
+      properties:
+        region:
+          type: integer
+          description: '0-7: Europe, Middle East, Asia, North America, South America, Oceania, Africa, Global.'
+        versus:
+          type: string
+          examples:
+            - players
+            - ai
+        matchType:
+          type: string
+          description: Ladder id. For EventLeaderboard this is the `leaderboardId` returned by EventList, not its eventId.
+        teamSize:
+          type: string
+          examples:
+            - 1v1
+            - 2v2
+            - 4v4
+        searchPlayer:
+          type: string
+        page:
+          type: integer
+        count:
+          type: integer
+        sortColumn:
+          type: string
+          examples:
+            - rank
+        sortDirection:
+          type: string
+          examples:
+            - ASC
+            - DESC
+        isConsole:
+          type: boolean
+    LeaderboardEntry:
+      type: object
+      additionalProperties: true
+      properties:
+        rlUserId:
+          type: integer
+        userName:
+          type: string
+        elo:
+          type: number
+        eloRating:
+          type: number
+        eloHighest:
+          type: number
+        rank:
+          type: integer
+        wins:
+          type: integer
+        losses:
+          type: integer
+        winRate:
+          type: number
+        streak:
+          type: integer
+    LeaderboardResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        count:
+          type: integer
+        lastUpdated:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LeaderboardEntry'
+        isEvent:
+          type: boolean
+        compressedItems:
+          type:
+            - string
+            - 'null'
+    EventItem:
+      type: object
+      properties:
+        eventId:
+          type: integer
+        leaderboardId:
+          type: integer
+        eventName:
+          type: string
+        startDate:
+          type: string
+        endDate:
+          type: string
+    EventListResponse:
+      type: array
+      items:
+        $ref: '#/components/schemas/EventItem'
+
+  # ---------------------------------------------------------------------------
+  # Web API schemas (LibreMatch wiki)
+  # ---------------------------------------------------------------------------
+
+    CountryListResponse:
+      type: object
+      additionalProperties:
+        type: string
+      description: Country name to ISO 3166-1 alpha-2 code.
+      examples:
+        - Afghanistan: AF
+          Germany: DE
+          United States: US
+    Language:
+      type: object
+      properties:
+        language:
+          type: string
+        utf8Language:
+          type: string
+      required:
+        - language
+        - utf8Language
+    LanguageList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Language'
+    TwitterPost:
+      type: object
+      additionalProperties: true
+      properties:
+        imageUrl:
+          type: string
+          format: uri
+        postDateTime:
+          type: string
+        postContent:
+          type: string
+        postUrl:
+          type: string
+          format: uri
+        author:
+          type: string
+        authorAvatarUrl:
+          type: string
+          format: uri
+        authorUrl:
+          type: string
+          format: uri
+        postDate:
+          type: string
+    TwitterFeed:
+      type: object
+      properties:
+        lastUpdated:
+          type: string
+        isCached:
+          type: boolean
+        posts:
+          type: array
+          items:
+            $ref: '#/components/schemas/TwitterPost'
+      required:
+        - lastUpdated
+        - isCached
+        - posts
+
+paths:
+  # ---------------------------------------------------------------------------
+  # v4 catalogue
+  # ---------------------------------------------------------------------------
+
+  /api/v4/mods/Games:
+    get:
+      tags: [Games]
+      summary: List the supported games
+      description: |
+        Returns the five titles the mods API serves, with the game version when
+        the catalogue carries one (`gameVersion` is otherwise null).
+      operationId: getGames
+      x-fidelity: Faithful
+      x-source: capture
+      responses:
+        '200':
+          description: The game catalogue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameList'
+              examples:
+                catalog:
+                  $ref: '#/components/examples/GameList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v4/mods/Tags:
+    get:
+      tags: [Tags]
+      summary: List the mod types/tags
+      description: |
+        Returns the mod types of every game, or only those of `game` when the
+        query parameter is present. This catalogue is the one Publish validates
+        `modTags` against, and the answer without `game` is the golden
+        `testdata/tags.json` of the test suite.
+      operationId: getTags
+      x-fidelity: Faithful
+      x-source: capture
+      parameters:
+        - $ref: '#/components/parameters/GameQuery'
+      responses:
+        '200':
+          description: The mod type catalogue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModTagList'
+              examples:
+                catalog:
+                  $ref: '#/components/examples/TagList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v4/mods/Featured:
+    post:
+      tags: [Featured]
+      summary: List the featured mods of a game
+      description: |
+        Returns the mods whose stored status is 5 ("Featured") for the game.
+
+        The echo resolves the defaults of a body that only carries `game`: the
+        AOM client sends `{"game":1001}` and receives sort `popular`, order
+        `DESC`, count 10 and creator null. The website sends its sort
+        (`recentpopular`), count (3) and filters explicitly, and those are
+        echoed as sent.
+      operationId: getFeaturedMods
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeaturedModsRequest'
+      responses:
+        '200':
+          description: The featured page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModList'
+              examples:
+                page:
+                  $ref: '#/components/examples/ModListPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v4/Mods/Find/:
+    post:
+      tags: [Mods]
+      summary: Search the mod catalogue
+      description: |
+        Searches the catalogue of one game with the filters and sorting of the
+        body.
+
+        `searchParams` echoes the request as resolved: `order` is upper-cased
+        (`desc` answers `DESC`), `modid` is always a JSON string (`"0"` when the
+        body omits it, even when the client sent the number 0), `status` and
+        `tags` are not echoed, and `start` defaults to 1. `totalCount` is null
+        on an empty page.
+      operationId: findModsV4
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FindModsRequest'
+      responses:
+        '200':
+          description: The matching page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModList'
+              examples:
+                page:
+                  $ref: '#/components/examples/ModListPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v4/Mods/Detail/{modId}:
+    get:
+      tags: [Mods]
+      summary: Get one mod (v4)
+      description: |
+        Returns one mod as the v4 detail. Unset values render the defaults of
+        the captures: `modVersion` 1.1, `verifiedVersion` and
+        `modStatusMessage` empty strings, `modTags` null (the ids live in
+        `modTagIds`), and the media fields as absolute URLs.
+
+        A deleted or unknown mod answers the RFC 9110 `ProblemDetails` body,
+        not the mod `ErrorResponse` envelope.
+      operationId: getModDetailV4
+      x-fidelity: Faithful
+      x-source: capture
+      parameters:
+        - name: modId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+          description: Mod identifier.
+      responses:
+        '200':
+          description: The mod detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ProblemNotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v4/Mods/Installed/:
+    post:
+      tags: [Mods]
+      summary: List the mods the caller installed
+      description: |
+        AOE3 and AOM send only `{"game":N}`; the echo then resolves sort
+        `popular`, order `DESC` and count 1000, and creator as the empty string
+        (not the caller). The AOE4 client and the website send the full filter
+        body and get it echoed as sent.
+      operationId: getInstalledModsV4
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstalledModsRequest'
+      responses:
+        '200':
+          description: The installed page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModList'
+              examples:
+                page:
+                  $ref: '#/components/examples/ModListPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v4/Mods/My/:
+    post:
+      tags: [Mods]
+      summary: List the mods the caller created
+      description: |
+        A body without `count` uses 10; every explicit count is capped at 500
+        in the page and echoed as 500 (the captures send 12, 1000 and 20000).
+        The echo resolves creator to the caller's platform id.
+      operationId: getMyModsV4
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MyModsRequestV4'
+      responses:
+        '200':
+          description: The caller's page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModList'
+              examples:
+                page:
+                  $ref: '#/components/examples/ModListPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ---------------------------------------------------------------------------
+  # v4 user state
+  # ---------------------------------------------------------------------------
+
+  /api/v4/Mods/Subscribe/{modId}:
+    get:
+      tags: [Mods]
+      summary: Subscribe to a mod
+      description: |
+        Records the subscription of the caller and returns the download target.
+        It does not touch the download counter: the AOE4 client calls Subscribe
+        and Download for the same mod, and only the latter counts.
+      operationId: subscribeModV4
+      x-fidelity: Faithful
+      x-source: capture
+      parameters:
+        - name: modId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+          description: Mod identifier.
+      responses:
+        '200':
+          description: The download target.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscribeResponse'
+              examples:
+                target:
+                  $ref: '#/components/examples/DownloadInfo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v4/Mods/Unsubscribe/{modId}:
+    get:
+      tags: [Mods]
+      summary: Unsubscribe from a mod
+      description: |
+        Removes the subscription of the caller. The answer is the bare JSON
+        literal `true`, not an object.
+      operationId: unsubscribeModV4
+      x-fidelity: Faithful
+      x-source: capture
+      parameters:
+        - name: modId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+          description: Mod identifier.
+      responses:
+        '200':
+          description: The subscription was removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnsubscribeResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/TrueLiteral'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v4/Mods/Rate/:
+    post:
+      tags: [Mods]
+      summary: Rate a mod
+      description: |
+        Stores the caller's rating (1-5) and answers the refreshed aggregate of
+        the mod. The aggregates are recomputed in the same transaction, so a
+        later sort by rating never reads a stale value.
+      operationId: rateModV4
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateModRequest'
+      responses:
+        '200':
+          description: The refreshed aggregate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateModResponse'
+              examples:
+                rated:
+                  $ref: '#/components/examples/RateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v4/Mods/Download/{modId}/:
+    get:
+      tags: [Mods]
+      summary: Get the download target of a mod
+      description: |
+        Returns the download target and counts the download once per user, so a
+        retry does not inflate the counter. `downloadUrl` is absolute and points
+        at `/api/v4/mods/Download/{modId}/file`, or at the stored absolute URL
+        when it is a CDN.
+      operationId: downloadModV4
+      x-fidelity: Faithful
+      x-source: capture
+      servers:
+        - url: https://api-dr.ageofempires.com
+          description: Download redirect host.
+      parameters:
+        - name: modId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+          description: Mod identifier.
+      responses:
+        '200':
+          description: The download target.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadResponse'
+              examples:
+                target:
+                  $ref: '#/components/examples/DownloadInfo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v4/mods/Download/{modId}/file:
+    get:
+      tags: [Mods]
+      summary: Download the stored mod archive
+      description: |
+        Streams the stored archive as an attachment. It is the target of the
+        `downloadUrl` that Subscribe and Download return, requires
+        authentication and does not count a download (the JSON endpoint owns
+        the counter). A mod without a stored archive answers 404.
+      operationId: downloadModFileV4
+      x-fidelity: Faithful
+      x-source: capture
+      parameters:
+        - name: modId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+          description: Mod identifier.
+      responses:
+        '200':
+          description: The raw archive.
+          headers:
+            Content-Disposition:
+              $ref: '#/components/headers/ContentDisposition'
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ---------------------------------------------------------------------------
+  # v4 reviews and relations
+  # ---------------------------------------------------------------------------
+
+  /api/v4/mods/Reviews:
+    post:
+      tags: [Mods]
+      summary: List the reviews of a mod
+      description: |
+        Returns one page of reviews of a mod. `modId` is a string. `page` and
+        `count` are read as sent (defaults 1 and 5) and are not validated
+        against a maximum; `ratingNum` is passed through without a 1..5 check
+        (a capture sends 7), and `ratingLabel` is accepted but unused.
+        `totalCount` is null when the mod has no reviews and
+        `continuationToken` is always null.
+      operationId: getModReviews
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewsRequest'
+      responses:
+        '200':
+          description: One page of reviews.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewsResponse'
+              examples:
+                one:
+                  $ref: '#/components/examples/Reviews'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v4/mods/Related/{modId}:
+    get:
+      tags: [Mods]
+      summary: List the mods related to one mod
+      description: |
+        Returns up to six mods of the same game that share at least one tag
+        with the given mod (excluding itself), falling back to the same game
+        when no mod shares a tag. Rows are ordered by popularity and mod id,
+        both descending. The echo is fixed rather than resolved: start 0, count
+        6, sort/order null, creator null and `modid` as the requested id string.
+        `totalCount` is the size of the page, and the rows carry `modTags` null,
+        unlike Find.
+
+        No related mods, or an unknown mod id, answers 204 with an empty body
+        instead of a 404.
+      operationId: getRelatedMods
+      x-fidelity: Faithful
+      x-source: capture
+      parameters:
+        - name: modId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+          description: Mod identifier.
+      responses:
+        '200':
+          description: The related page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModList'
+        '204':
+          description: No related mods, or the requested mod does not exist.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ---------------------------------------------------------------------------
+  # v4 management
+  # ---------------------------------------------------------------------------
+
+  /api/v4/mods/Publish:
+    post:
+      tags: [Mods]
+      summary: Publish or update a mod
+      description: |
+        Creates a mod when `modId` is absent and updates it when present.
+        Multipart fields are read case-insensitively; `modName` and
+        `description` accept the AOE4 JSON localization map and store its plain
+        string (`en` wins, otherwise the first entry); `modVisibility` is read
+        case-insensitively. `modStatusId` is always 2 (Published), whatever the
+        visibility.
+
+        A create without tags also gets the auto tag 26 ("Other"). A publish
+        with a file stores it content-addressed and sets `modDiskSize` to the
+        uncompressed size of the archive. An update without `changeList` bumps
+        `modVersion` by 0.1 and flips `updateAvailable` for subscribers of the
+        previous version.
+      operationId: publishMod
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PublishRequest'
+      responses:
+        '200':
+          description: The mod was stored; resultValue is its id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModIdResult'
+              examples:
+                stored:
+                  $ref: '#/components/examples/ModIdResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v4/mods/CheckAndPublishFile:
+    put:
+      tags: [Mods]
+      summary: Upload the mod archive (Azure Block Blob style)
+      description: |
+        The upload the AOE4 client performs right after Publish: one request per
+        block and a final commit, both answering the bare JSON literal `true`.
+
+        * `?comp=block&blockid=00000000&modId=N` - the body is the raw archive
+          bytes; the block is staged and nothing visible changes yet.
+        * `?comp=blocklist&modId=N` - the body is
+          `<?xml version="1.0" encoding="utf-8"?><BlockList><Latest>00000000</Latest></BlockList>`
+          (newline-separated block ids are also accepted). The commit
+          concatenates the listed blocks in order, stores them as the mod file
+          with a `.sga` extension, fills `fileUrl`, `fileCRC`, `modFileSize`
+          and `modDiskSize` (all equal: the capture commits 1509669) and stamps
+          `lastUpdate`.
+
+        `modId` is required on both calls; a missing `comp` behaves like
+        `block`. The commit requires the caller to own the mod (401 otherwise)
+        and a missing mod answers the mod `ErrorResponse` 404.
+      operationId: checkAndPublishFile
+      x-fidelity: Faithful
+      x-source: capture
+      parameters:
+        - $ref: '#/components/parameters/Comp'
+        - $ref: '#/components/parameters/BlockId'
+        - $ref: '#/components/parameters/ModIdQuery'
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+              description: Raw block bytes when comp is block.
+          application/xml:
+            schema:
+              type: string
+              description: '<BlockList><Latest>00000000</Latest></BlockList>'
+      responses:
+        '200':
+          description: The block or the commit was stored.
+          content:
+            application/json:
+              schema:
+                type: boolean
+                examples: [true]
+              examples:
+                ok:
+                  $ref: '#/components/examples/TrueLiteral'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v4/mods/Delete:
+    post:
+      tags: [Mods]
+      summary: Delete a mod
+      description: |
+        Deletes a mod and everything that hangs off it (tags, images, reviews,
+        ratings, installs, reports). Only its creator may delete it; a foreign
+        mod answers 401. The body carries the id as a number and the answer is
+        the bare `true`.
+      operationId: deleteMod
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteModRequest'
+      responses:
+        '200':
+          description: The mod was deleted.
+          content:
+            application/json:
+              schema:
+                type: boolean
+                examples: [true]
+              examples:
+                deleted:
+                  $ref: '#/components/examples/TrueLiteral'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v4/mods/Report:
+    post:
+      tags: [Mods]
+      summary: Report a mod
+      description: |
+        Records a concern about a mod. Every field of the body is a string,
+        including `modId` (unlike Delete). The answer is the bare `true`.
+      operationId: reportMod
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportModRequest'
+      responses:
+        '200':
+          description: The report was recorded.
+          content:
+            application/json:
+              schema:
+                type: boolean
+                examples: [true]
+              examples:
+                recorded:
+                  $ref: '#/components/examples/TrueLiteral'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ---------------------------------------------------------------------------
+  # Legacy v1 surface (AOE2 client)
+  # ---------------------------------------------------------------------------
+
+  /api/v1/Mods/Detail/:
+    post:
+      tags: [Legacy]
+      summary: Get one mod (v1)
+      description: |
+        Returns the v1 render of one mod: the outer object carries identity,
+        texts, type, status and the image list, while every viewer field, date,
+        size and counter is null or zero and `isLoggedOn` is false even for the
+        owner. The nested `metaData` snapshot carries the populated values.
+      operationId: getModDetailV1
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DetailRequestV1'
+      responses:
+        '200':
+          description: The v1 detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegacyDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/Mods/FindAsUser/:
+    post:
+      tags: [Legacy]
+      summary: Search the catalogue (v1)
+      description: |
+        The legacy search of the AOE2 client, with the v1 row render (fewer
+        fields, ratings dropped, tag ids rendered as strings). The client walks
+        the pages with start 0 and then 1..14, so both bases must resolve to
+        the first page. A body without count uses 45.
+      operationId: findModsAsUserV1
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FindModsRequestV1'
+      responses:
+        '200':
+          description: The matching page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegacyModList'
+              examples:
+                page:
+                  $ref: '#/components/examples/LegacyModList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/Mods/Installed/:
+    post:
+      tags: [Legacy]
+      summary: List installed mods (v1)
+      description: |
+        The AOE2 client sends `{"game":2,"q":"*"}`, so `q` `"*"` must be read as
+        "no filter". The rows use the v1 render.
+      operationId: getInstalledModsV1
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FindModsRequestV1'
+      responses:
+        '200':
+          description: The installed page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegacyModList'
+              examples:
+                page:
+                  $ref: '#/components/examples/LegacyModList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/Mods/My/:
+    post:
+      tags: [Legacy]
+      summary: List the caller's mods (v1)
+      description: |
+        Lists the mods created by the caller in the v1 render. `totalCount` is
+        null in every capture of this endpoint, even when it returns rows.
+      operationId: getMyModsV1
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MyModsRequest'
+      responses:
+        '200':
+          description: The caller's page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegacyModList'
+              examples:
+                page:
+                  $ref: '#/components/examples/LegacyModList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/Mods/Flag/:
+    post:
+      tags: [Legacy]
+      summary: Flag a mod (v1)
+      description: |
+        Records the report of the AOE2 client. The envelope answers
+        `resultKey: "flag"` and echoes `stringValue` in `resultValue`.
+      operationId: flagModV1
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlagModRequest'
+      responses:
+        '200':
+          description: The flag was recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlagResponse'
+              examples:
+                flagged:
+                  $ref: '#/components/examples/FlagResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/Mods/Install/:
+    post:
+      tags: [Legacy]
+      summary: Install a mod (v1)
+      description: |
+        Records the install of the caller and answers the serializer envelope
+        the client expects: `contentType` `application/json`, `statusCode` 200
+        and the Subscribe target in `value`.
+      operationId: installModV1
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstallModRequest'
+      responses:
+        '200':
+          description: The install was recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstallModResponse'
+              examples:
+                installed:
+                  $ref: '#/components/examples/InstallResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/Mods/Uninstall/:
+    post:
+      tags: [Legacy]
+      summary: Uninstall a mod (v1)
+      description: |
+        Removes the install of the caller and answers the serializer envelope
+        with `value: true`.
+      operationId: uninstallModV1
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UninstallModRequest'
+      responses:
+        '200':
+          description: The install was removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UninstallModResponse'
+              examples:
+                uninstalled:
+                  $ref: '#/components/examples/UninstallResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/Mods/Create/:
+    post:
+      tags: [Legacy]
+      summary: Create or update a mod (v1)
+      description: |
+        The multipart form the AOE2 client builds: `modFiles` is the archive,
+        `modImages` the screenshots paired with `ImageMetaData` by file name,
+        and the scalar fields spell `ModName`, `GameTitleId`, `ModType`,
+        `Description`, `modVisibility` and `ChangeList` (read
+        case-insensitively). An `imageFileSize` of the metadata entry is a
+        string.
+
+        A body carrying `ModId` of the caller's mod UPDATES it instead and
+        answers the same id: the AOE2 client re-publishes through this endpoint
+        after an upload. The update keeps the stored images when the body only
+        re-declares their identity (imageId plus absolute URLs, no file
+        parts), and otherwise behaves like Publish (the +0.1 version tick, the
+        `updateAvailable` flip and the changeList rewrite).
+
+        Create side effects pinned by the capture: status Published (2); the
+        stored `modVersion` is zero (only the v4 Detail renders 1.1); the
+        description is mirrored into `modDescription`; the creator counts as
+        the first download and install; and without explicit tags the mod gets
+        the auto tag 26 ("Other").
+      operationId: createModV1
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreateModRequestV1'
+      responses:
+        '200':
+          description: The id of the created or updated mod.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModIdResult'
+              examples:
+                stored:
+                  $ref: '#/components/examples/ModIdResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/Mods/Delete/:
+    post:
+      tags: [Legacy]
+      summary: Delete a mod (v1)
+      description: |
+        Deletes a mod only when the caller is its creator. The body is
+        `{"id":N}` and the answer is always the envelope with
+        `resultKey: "Deleted"` and `resultValue: "true"`; the v4 Delete answers
+        the bare `true` instead.
+      operationId: deleteModV1
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstallModRequest'
+      responses:
+        '200':
+          description: The mod was deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletedModResponseV1'
+              examples:
+                deleted:
+                  $ref: '#/components/examples/DeletedModResponseV1'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ---------------------------------------------------------------------------
+  # Polls
+  # ---------------------------------------------------------------------------
+
+  /Poll/list:
+    get:
+      tags: [Polls]
+      summary: List the active polls
+      description: |
+        Returns the poll summaries ordered by startDateTime descending. The
+        catalogue is the local seed; the wire shape is the captured one.
+      operationId: getPollList
+      x-fidelity: Faithful
+      x-source: capture
+      responses:
+        '200':
+          description: The active polls (possibly an empty array).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PollList'
+              examples:
+                active:
+                  $ref: '#/components/examples/PollList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /Poll/{pollId}:
+    get:
+      tags: [Polls]
+      summary: Get one poll
+      description: |
+        Returns one poll with its questions and options, including the caller's
+        own votes.
+      operationId: getPoll
+      x-fidelity: Faithful
+      x-source: capture
+      parameters:
+        - name: pollId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Poll id (a UUID, matched in its canonical lowercase form).
+      responses:
+        '200':
+          description: The poll.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Poll'
+              examples:
+                poll:
+                  $ref: '#/components/examples/Poll'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ---------------------------------------------------------------------------
+  # Moderation
+  # ---------------------------------------------------------------------------
+
+  /textmoderation:
+    post:
+      tags: [Moderation]
+      summary: Check text content
+      description: |
+        The moderation probe of the game clients. The captures answer `Allow`
+        for every input, so the answer is deterministic: every result is
+        `Allow`, `translationAvailable` is false, `moderatedText` echoes
+        `textContent` and `language` carries the detected base language. The
+        four required fields are validated (400 when one is missing).
+      operationId: moderateText
+      x-fidelity: Faithful
+      x-source: capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextModerationRequest'
+      responses:
+        '200':
+          description: The moderation result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextModerationResponse'
+              examples:
+                allowed:
+                  $ref: '#/components/examples/TextModeration'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ---------------------------------------------------------------------------
+  # Documented-only: v4 mod catalogue (LibreMatch wiki)
+  # ---------------------------------------------------------------------------
+
+  /api/v4/mods/Types:
+    get:
+      tags:
+        - Tags
+      summary: List the mod types
+      description: Documented by the wiki as `types` (type `modsTypes`); the captures contain the sibling
+        `Tags` catalogue but not this response. The wiki does not publish the response shape. GET is the
+        method of the captured catalogue sibling.
+      operationId: getModTypesV4
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v4/mods/types.html
+      x-path-confidence: documented
+      x-method-confidence: inferred
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v4/mods/Like:
+    post:
+      tags:
+        - Mods
+      summary: Like a mod
+      description: Documented by the wiki as `like` (type `modsLike`). The captures do not contain it and
+        the wiki does not publish the request or response fields. POST is inferred from the other state-changing
+        v4 actions.
+      operationId: likeModV4
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v4/mods/like.html
+      x-path-confidence: documented
+      x-method-confidence: inferred
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WikiObject'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v4/mods/GetFlagged:
+    post:
+      tags:
+        - Moderation
+      summary: List flagged mods
+      description: Documented by the wiki as `getflagged`; the official website source declares it in the
+        moderation family. The captures do not contain it and the wiki does not publish the filters or the
+        row shape. POST is inferred from the other query endpoints of the v4 catalogue.
+      operationId: getFlaggedModsV4
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v4/mods/getflagged.html
+      x-path-confidence: documented
+      x-method-confidence: inferred
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WikiObject'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v4/mods/GetFlaggedDetail:
+    post:
+      tags:
+        - Moderation
+      summary: Read a flagged mod
+      description: Documented by the wiki as `getflaggeddetail` (type `modsFlaggedDetail`); the official
+        website source declares it in the moderation family. The captures do not contain it and the wiki
+        does not publish the request or response fields.
+      operationId: getFlaggedModDetailV4
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v4/mods/getflaggeddetail.html
+      x-path-confidence: documented
+      x-method-confidence: inferred
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WikiObject'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v4/mods/Moderate:
+    post:
+      tags:
+        - Moderation
+      summary: Moderate a mod
+      description: Documented by the wiki as `moderate` (type `modsModerate`); the official website source
+        declares it in the moderation family. The captures do not contain it and the wiki does not publish
+        the request or response fields.
+      operationId: moderateModV4
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v4/mods/moderate.html
+      x-path-confidence: documented
+      x-method-confidence: inferred
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WikiObject'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v4/mods/PublishFile:
+    post:
+      tags:
+        - Mods
+      summary: Upload a mod file
+      description: Documented by the wiki as `publishfile` (type `modsPublishFile`). The captures contain
+        the newer `CheckAndPublishFile` block-upload flow; the wiki does not publish this endpoint's body
+        or response. POST and multipart/form-data are inferred.
+      operationId: publishModFileV4
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v4/mods/publishfile.html
+      x-path-confidence: documented
+      x-method-confidence: inferred
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ---------------------------------------------------------------------------
+  # Documented-only: legacy v1 mods (LibreMatch wiki)
+  # ---------------------------------------------------------------------------
+
+  /api/v1/Mods/AnonDetail/:
+    post:
+      tags:
+        - Legacy
+      summary: Read a mod anonymously
+      description: Returns the detail of a mod for an anonymous viewer. The wiki lists the endpoint but
+        not its fields; the captured v1 Detail uses the same outer envelope. The path follows the casing
+        and trailing slash of the captured v1 endpoints.
+      operationId: getModAnonDetailV1
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v1/mods/anondetail.html
+      x-path-confidence: inferred
+      x-method-confidence: inferred
+      x-path-note: The wiki lists the operation name; the full path is inferred from the captured `/api/v1/Mods/.../`
+        family.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/V1ModIdRequest'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/Mods/Download/:
+    post:
+      tags:
+        - Legacy
+      summary: Get a mod download URL
+      description: Returns a download URL for the mod. The body fields come from a published client snippet
+        (`id`, `boolValue`), not from the wiki. The path follows the casing and trailing slash of the captured
+        v1 endpoints.
+      operationId: downloadModV1
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v1/mods/download.html
+      x-path-confidence: inferred
+      x-method-confidence: inferred
+      x-path-note: The wiki lists the operation name; the full path is inferred from the captured `/api/v1/Mods/.../`
+        family.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/V1DownloadRequest'
+      responses:
+        '200':
+          description: Download URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V1DownloadResponse'
+              examples:
+                sample:
+                  value:
+                    value:
+                      downloadUrl: https://cdn.ageofempires.com/aoe-mods/2/3903/file.zip
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/Mods/Edit/:
+    post:
+      tags:
+        - Legacy
+      summary: Edit a mod
+      description: Updates a mod. The wiki lists the endpoint; the captured v1 Create documents the multipart
+        field family (`ModName`, `GameTitleId`, `ModType`, `Description`, `modVisibility`, `ChangeList`,
+        `ImageMetaData`, `modImages`, `modFiles`). The path follows the casing and trailing slash of the
+        captured v1 endpoints.
+      operationId: editModV1
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v1/mods/edit.html
+      x-path-confidence: inferred
+      x-method-confidence: inferred
+      x-path-note: The wiki lists the operation name; the full path is inferred from the captured `/api/v1/Mods/.../`
+        family.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/Mods/Find/:
+    post:
+      tags:
+        - Legacy
+      summary: Search mods
+      description: Searches the legacy catalogue. The wiki lists the endpoint; the captured v1 `FindAsUser`
+        documents the list envelope and filters. The path follows the casing and trailing slash of the captured
+        v1 endpoints.
+      operationId: findModsV1
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v1/mods/find.html
+      x-path-confidence: inferred
+      x-method-confidence: inferred
+      x-path-note: The wiki lists the operation name; the full path is inferred from the captured `/api/v1/Mods/.../`
+        family.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WikiObject'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/Mods/GetFlagged/:
+    post:
+      tags:
+        - Legacy
+      summary: List flagged mods
+      description: Legacy moderation list. The wiki lists the endpoint; its fields are not published. The
+        path follows the casing and trailing slash of the captured v1 endpoints.
+      operationId: getFlaggedModsV1
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v1/mods/getflagged.html
+      x-path-confidence: inferred
+      x-method-confidence: inferred
+      x-path-note: The wiki lists the operation name; the full path is inferred from the captured `/api/v1/Mods/.../`
+        family.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WikiObject'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/Mods/Like/:
+    post:
+      tags:
+        - Legacy
+      summary: Like a mod
+      description: Legacy like action. The wiki lists the endpoint; its fields are not published. The path
+        follows the casing and trailing slash of the captured v1 endpoints.
+      operationId: likeModV1
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v1/mods/like.html
+      x-path-confidence: inferred
+      x-method-confidence: inferred
+      x-path-note: The wiki lists the operation name; the full path is inferred from the captured `/api/v1/Mods/.../`
+        family.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WikiObject'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/Mods/Moderate/:
+    post:
+      tags:
+        - Legacy
+      summary: Moderate a mod
+      description: Legacy moderation action. The wiki lists the endpoint; its fields are not published.
+        The path follows the casing and trailing slash of the captured v1 endpoints.
+      operationId: moderateModV1
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v1/mods/moderate.html
+      x-path-confidence: inferred
+      x-method-confidence: inferred
+      x-path-note: The wiki lists the operation name; the full path is inferred from the captured `/api/v1/Mods/.../`
+        family.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WikiObject'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/Mods/Tags/:
+    post:
+      tags:
+        - Legacy
+      summary: List the legacy tags
+      description: Legacy tag catalogue. The wiki lists the endpoint; its fields are not published. The
+        path follows the casing and trailing slash of the captured v1 endpoints.
+      operationId: getModTagsV1
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v1/mods/tags.html
+      x-path-confidence: inferred
+      x-method-confidence: inferred
+      x-path-note: The wiki lists the operation name; the full path is inferred from the captured `/api/v1/Mods/.../`
+        family.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WikiObject'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/Mods/Types/:
+    post:
+      tags:
+        - Legacy
+      summary: List the legacy types
+      description: Legacy type catalogue. The wiki lists the endpoint; its fields are not published. The
+        path follows the casing and trailing slash of the captured v1 endpoints.
+      operationId: getModTypesV1
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v1/mods/types.html
+      x-path-confidence: inferred
+      x-method-confidence: inferred
+      x-path-note: The wiki lists the operation name; the full path is inferred from the captured `/api/v1/Mods/.../`
+        family.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WikiObject'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ---------------------------------------------------------------------------
+  # Documented-only: legacy v1 bugs (LibreMatch wiki)
+  # ---------------------------------------------------------------------------
+
+  /api/v1/Bugs/BugDetail/:
+    post:
+      tags:
+        - Bugs
+      summary: Read a bug report
+      description: Documented by the wiki under `/api/v1/bugs`; the captures do not contain the bug endpoints
+        and the wiki does not publish their fields. POST follows the legacy v1 convention.
+      operationId: getBugDetailV1
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v1/bugs/bugdetail.html
+      x-path-confidence: inferred
+      x-method-confidence: inferred
+      x-path-note: The wiki lists the operation name; the full path is inferred from the `/api/v1/` version
+        family.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WikiObject'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/Bugs/GetAsset/:
+    post:
+      tags:
+        - Bugs
+      summary: Download a bug attachment
+      description: Documented by the wiki under `/api/v1/bugs`; the captures do not contain the bug endpoints
+        and the wiki does not publish their fields. POST follows the legacy v1 convention.
+      operationId: getBugAssetV1
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v1/bugs/getasset.html
+      x-path-confidence: inferred
+      x-method-confidence: inferred
+      x-path-note: The wiki lists the operation name; the full path is inferred from the `/api/v1/` version
+        family.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WikiObject'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/Bugs/GetList/:
+    post:
+      tags:
+        - Bugs
+      summary: List bug reports
+      description: Documented by the wiki under `/api/v1/bugs`; the captures do not contain the bug endpoints
+        and the wiki does not publish their fields. POST follows the legacy v1 convention.
+      operationId: getBugListV1
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v1/bugs/getlist.html
+      x-path-confidence: inferred
+      x-method-confidence: inferred
+      x-path-note: The wiki lists the operation name; the full path is inferred from the `/api/v1/` version
+        family.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WikiObject'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/Bugs/Submit/:
+    post:
+      tags:
+        - Bugs
+      summary: Submit a bug report
+      description: Documented by the wiki under `/api/v1/bugs`; the captures do not contain the bug endpoints
+        and the wiki does not publish their fields. POST follows the legacy v1 convention.
+      operationId: submitBugV1
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v1/bugs/submit.html
+      x-path-confidence: inferred
+      x-method-confidence: inferred
+      x-path-note: The wiki lists the operation name; the full path is inferred from the `/api/v1/` version
+        family.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WikiObject'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/Bugs/UpdateBug/:
+    post:
+      tags:
+        - Bugs
+      summary: Update a bug report
+      description: Documented by the wiki under `/api/v1/bugs`; the captures do not contain the bug endpoints
+        and the wiki does not publish their fields. POST follows the legacy v1 convention.
+      operationId: updateBugV1
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v1/bugs/updatebug.html
+      x-path-confidence: inferred
+      x-method-confidence: inferred
+      x-path-note: The wiki lists the operation name; the full path is inferred from the `/api/v1/` version
+        family.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WikiObject'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ---------------------------------------------------------------------------
+  # Documented-only: Age II leaderboard and match detail
+  # ---------------------------------------------------------------------------
+
+  /api/v2/AgeII/GetMPMatchDetail:
+    post:
+      tags:
+        - GameStats
+      summary: Get a multiplayer match detail
+      description: Documented by the wiki with a full request and response example. The request carries
+        `profileId` and `gameId`; the response carries `matchSummary`, `playerList`, `statusCode` and `errorMessage`.
+        The example is the wiki's, reduced to one player.
+      operationId: getMPMatchDetailV2
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v2/ageii/getmpmatchdetail.html
+      x-path-confidence: documented
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameStatsRequest'
+      responses:
+        '200':
+          description: Match summary and players.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchDetail'
+              examples:
+                sample:
+                  value:
+                    matchSummary:
+                      gameId: '398953338'
+                      matchId: null
+                      profileId: 0
+                      userName: null
+                      avatarUrl: null
+                      dateTime: '2025-06-10 22:06:12.0'
+                      matchLength: 30.6
+                      playerCount: 0
+                      victoryResultID: 0
+                      mapType: My Map
+                      civilizationID: 0
+                      civilization: null
+                      winLoss: null
+                    playerList:
+                      - userId: '3008981'
+                        profileId: 0
+                        userName: AMI
+                        avatarUrl: https://avatars.steamstatic.com/7db4b32530a62a673fe3b8f8e85f2764b92cd206_full.jpg
+                        elo: null
+                        playerStanding: 0.0
+                        isHuman: true
+                        team: 0
+                        civName: Byzantines
+                        winLoss: Loss
+                        matchReplayAvailable: true
+                    statusCode: 0
+                    errorMessage: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v2/ageii/Leaderboard:
+    post:
+      tags:
+        - Leaderboards
+      summary: Get the Age II DE leaderboard
+      description: Documented by the wiki; the request fields and response envelope are the ones the official
+        website sends to the leaderboard family. Specify `sortColumn` and `sortDirection`; the site sends
+        them explicitly and an omitted sort is not guaranteed to return rank 1.
+      operationId: getLeaderboardV2
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/v2/ageii/leaderboard.html
+      x-path-confidence: documented
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaderboardRequest'
+      responses:
+        '200':
+          description: Leaderboard page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaderboardResponse'
+              examples:
+                sample:
+                  value:
+                    count: 1
+                    lastUpdated: '2026-09-19T00:00:00'
+                    items:
+                      - rlUserId: 123456
+                        userName: Player
+                        elo: 1800
+                        eloRating: 1800
+                        eloHighest: 1900
+                        rank: 1
+                        wins: 10
+                        losses: 5
+                        winRate: 66.7
+                        streak: 2
+                    isEvent: false
+                    compressedItems: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ---------------------------------------------------------------------------
+  # Documented-only: Age I DE statistics (LibreMatch wiki)
+  # ---------------------------------------------------------------------------
+
+  /api/GameStats/AgeI/GetCampaign:
+    post:
+      tags:
+        - GameStats
+      summary: Get Age I campaign statistics
+      description: 'Documented by the wiki for Age I: DE. The route is public on the official website; the
+        wiki does not publish the field-level response.'
+      operationId: getAge1Campaign
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/agede/getcampaign.html
+      x-path-confidence: composed
+      x-path-note: The wiki documents the operation as `/GetCampaign`; the full path is composed with the
+        `/api/GameStats/AgeI/` base the official website uses. The wiki does not publish a field-level response
+        schema.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameStatsRequest'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/GameStats/AgeI/GetMPFull:
+    post:
+      tags:
+        - GameStats
+      summary: Get Age I multiplayer statistics
+      description: 'Documented by the wiki for Age I: DE. The route is public on the official website; the
+        wiki does not publish the field-level response.'
+      operationId: getAge1MPFull
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/agede/getmpfull.html
+      x-path-confidence: composed
+      x-path-note: The wiki documents the operation as `/GetMPFull`; the full path is composed with the
+        `/api/GameStats/AgeI/` base the official website uses. The wiki does not publish a field-level response
+        schema.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameStatsRequest'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/GameStats/AgeI/GetMPMatchList:
+    post:
+      tags:
+        - GameStats
+      summary: Get the Age I multiplayer match list
+      description: 'Documented by the wiki for Age I: DE. The route is public on the official website; the
+        wiki does not publish the field-level response.'
+      operationId: getAge1MPMatchList
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/agede/getmpmatchlist.html
+      x-path-confidence: composed
+      x-path-note: The wiki documents the operation as `/GetMPMatchList`; the full path is composed with
+        the `/api/GameStats/AgeI/` base the official website uses. The wiki does not publish a field-level
+        response schema.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameStatsRequest'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/GameStats/AgeI/GetSPFull:
+    post:
+      tags:
+        - GameStats
+      summary: Get Age I single-player statistics
+      description: 'Documented by the wiki for Age I: DE. The route is public on the official website; the
+        wiki does not publish the field-level response.'
+      operationId: getAge1SPFull
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/agede/getspfull.html
+      x-path-confidence: composed
+      x-path-note: The wiki documents the operation as `/GetSPFull`; the full path is composed with the
+        `/api/GameStats/AgeI/` base the official website uses. The wiki does not publish a field-level response
+        schema.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameStatsRequest'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/GameStats/AgeI/GetSPMatchList:
+    post:
+      tags:
+        - GameStats
+      summary: Get the Age I single-player match list
+      description: 'Documented by the wiki for Age I: DE. The route is public on the official website; the
+        wiki does not publish the field-level response.'
+      operationId: getAge1SPMatchList
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/agede/getspmatchlist.html
+      x-path-confidence: composed
+      x-path-note: The wiki documents the operation as `/GetSPMatchList`; the full path is composed with
+        the `/api/GameStats/AgeI/` base the official website uses. The wiki does not publish a field-level
+        response schema.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameStatsRequest'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ---------------------------------------------------------------------------
+  # Documented-only: Age II DE statistics (LibreMatch wiki)
+  # ---------------------------------------------------------------------------
+
+  /api/GameStats/AgeII/GetCampaign:
+    post:
+      tags:
+        - GameStats
+      summary: Get Age II campaign statistics
+      description: 'Documented by the wiki for Age II: DE. The route is public on the official website;
+        the wiki does not publish the field-level response.'
+      operationId: getAge2Campaign
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/ageii/getcampaign.html
+      x-path-confidence: composed
+      x-path-note: The wiki documents the operation as `/GetCampaign`; the full path is composed with the
+        `/api/GameStats/AgeII/` base the official website uses. The wiki does not publish a field-level
+        response schema.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameStatsRequest'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/GameStats/AgeII/GetMPFull:
+    post:
+      tags:
+        - GameStats
+      summary: Get Age II multiplayer statistics
+      description: 'Documented by the wiki for Age II: DE. The route is public on the official website;
+        the wiki does not publish the field-level response.'
+      operationId: getAge2MPFull
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/ageii/getmpfull.html
+      x-path-confidence: composed
+      x-path-note: The wiki documents the operation as `/GetMPFull`; the full path is composed with the
+        `/api/GameStats/AgeII/` base the official website uses. The wiki does not publish a field-level
+        response schema.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameStatsRequest'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/GameStats/AgeII/GetMPMatchList:
+    post:
+      tags:
+        - GameStats
+      summary: Get the Age II multiplayer match list
+      description: 'Documented by the wiki for Age II: DE. The route is public on the official website;
+        the wiki does not publish the field-level response.'
+      operationId: getAge2MPMatchList
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/ageii/getmpmatchlist.html
+      x-path-confidence: composed
+      x-path-note: The wiki documents the operation as `/GetMPMatchList`; the full path is composed with
+        the `/api/GameStats/AgeII/` base the official website uses. The wiki does not publish a field-level
+        response schema.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameStatsRequest'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/GameStats/AgeII/GetSPFull:
+    post:
+      tags:
+        - GameStats
+      summary: Get Age II single-player statistics
+      description: 'Documented by the wiki for Age II: DE. The route is public on the official website;
+        the wiki does not publish the field-level response.'
+      operationId: getAge2SPFull
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/ageii/getspfull.html
+      x-path-confidence: composed
+      x-path-note: The wiki documents the operation as `/GetSPFull`; the full path is composed with the
+        `/api/GameStats/AgeII/` base the official website uses. The wiki does not publish a field-level
+        response schema.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameStatsRequest'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/GameStats/AgeII/GetSPMatchList:
+    post:
+      tags:
+        - GameStats
+      summary: Get the Age II single-player match list
+      description: 'Documented by the wiki for Age II: DE. The route is public on the official website;
+        the wiki does not publish the field-level response.'
+      operationId: getAge2SPMatchList
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/ageii/getspmatchlist.html
+      x-path-confidence: composed
+      x-path-note: The wiki documents the operation as `/GetSPMatchList`; the full path is composed with
+        the `/api/GameStats/AgeII/` base the official website uses. The wiki does not publish a field-level
+        response schema.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameStatsRequest'
+      responses:
+        '200':
+          description: Documented response. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/GameStats/AgeII/GetAge2MatchReplay/:
+    get:
+      tags:
+        - GameStats
+      summary: Get an Age II match replay
+      description: Documented by the wiki as `getAge2MatchReplay`. The path is composed with the `/api/GameStats/AgeII/`
+        base; the response is the download URL the wiki describes.
+      operationId: getAge2MatchReplay
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/ageii/getage2matchreplay.html
+      x-path-confidence: composed
+      x-path-note: The wiki documents the operation without a base; the path is composed with `/api/GameStats/AgeII/`.
+      security: []
+      parameters:
+        - name: gameId
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: profileId
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Replay download information. The wiki does not publish its field-level shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ---------------------------------------------------------------------------
+  # Documented-only: Age III DE leaderboards (LibreMatch wiki)
+  # ---------------------------------------------------------------------------
+
+  /api/ageiii/Leaderboard:
+    post:
+      tags:
+        - Leaderboards
+      summary: Get the Age III DE leaderboard
+      description: Documented by the wiki; the request fields and response envelope are the ones the official
+        website sends to the leaderboard family. Specify `sortColumn` and `sortDirection`; the site sends
+        them explicitly and an omitted sort is not guaranteed to return rank 1.
+      operationId: getAge3Leaderboard
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/ageiii/leaderboard.html
+      x-path-confidence: documented
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaderboardRequest'
+      responses:
+        '200':
+          description: Leaderboard page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaderboardResponse'
+              examples:
+                sample:
+                  value:
+                    count: 1
+                    lastUpdated: '2026-09-19T00:00:00'
+                    items:
+                      - rlUserId: 123456
+                        userName: Player
+                        elo: 1800
+                        eloRating: 1800
+                        eloHighest: 1900
+                        rank: 1
+                        wins: 10
+                        losses: 5
+                        winRate: 66.7
+                        streak: 2
+                    isEvent: false
+                    compressedItems: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/ageiii/EventLeaderboard:
+    post:
+      tags:
+        - Leaderboards
+      summary: Get an Age III DE event leaderboard
+      description: Documented by the wiki; the request fields and response envelope are the ones the official
+        website sends to the leaderboard family. Specify `sortColumn` and `sortDirection`; the site sends
+        them explicitly and an omitted sort is not guaranteed to return rank 1. `matchType` is the `leaderboardId`
+        from EventList, not the `eventId`.
+      operationId: getAge3EventLeaderboard
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/ageiii/eventleaderboard.html
+      x-path-confidence: composed
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaderboardRequest'
+      responses:
+        '200':
+          description: Leaderboard page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaderboardResponse'
+              examples:
+                sample:
+                  value:
+                    count: 1
+                    lastUpdated: '2026-09-19T00:00:00'
+                    items:
+                      - rlUserId: 123456
+                        userName: Player
+                        elo: 1800
+                        eloRating: 1800
+                        eloHighest: 1900
+                        rank: 1
+                        wins: 10
+                        losses: 5
+                        winRate: 66.7
+                        streak: 2
+                    isEvent: false
+                    compressedItems: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ---------------------------------------------------------------------------
+  # Documented-only: Age IV leaderboards and match detail (LibreMatch wiki)
+  # ---------------------------------------------------------------------------
+
+  /api/ageiv/Leaderboard:
+    post:
+      tags:
+        - Leaderboards
+      summary: Get the Age IV leaderboard
+      description: Documented by the wiki; the request fields and response envelope are the ones the official
+        website sends to the leaderboard family. Specify `sortColumn` and `sortDirection`; the site sends
+        them explicitly and an omitted sort is not guaranteed to return rank 1.
+      operationId: getAge4Leaderboard
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/ageiv/leaderboard.html
+      x-path-confidence: documented
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaderboardRequest'
+      responses:
+        '200':
+          description: Leaderboard page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaderboardResponse'
+              examples:
+                sample:
+                  value:
+                    count: 1
+                    lastUpdated: '2026-09-19T00:00:00'
+                    items:
+                      - rlUserId: 123456
+                        userName: Player
+                        elo: 1800
+                        eloRating: 1800
+                        eloHighest: 1900
+                        rank: 1
+                        wins: 10
+                        losses: 5
+                        winRate: 66.7
+                        streak: 2
+                    isEvent: false
+                    compressedItems: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/ageiv/EventLeaderboard:
+    post:
+      tags:
+        - Leaderboards
+      summary: Get an Age IV event leaderboard
+      description: Documented by the wiki; the request fields and response envelope are the ones the official
+        website sends to the leaderboard family. Specify `sortColumn` and `sortDirection`; the site sends
+        them explicitly and an omitted sort is not guaranteed to return rank 1. `matchType` is the `leaderboardId`
+        from EventList, not the `eventId`.
+      operationId: getAge4EventLeaderboard
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/ageiv/eventleaderboard.html
+      x-path-confidence: documented
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaderboardRequest'
+      responses:
+        '200':
+          description: Leaderboard page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaderboardResponse'
+              examples:
+                sample:
+                  value:
+                    count: 1
+                    lastUpdated: '2026-09-19T00:00:00'
+                    items:
+                      - rlUserId: 123456
+                        userName: Player
+                        elo: 1800
+                        eloRating: 1800
+                        eloHighest: 1900
+                        rank: 1
+                        wins: 10
+                        losses: 5
+                        winRate: 66.7
+                        streak: 2
+                    isEvent: false
+                    compressedItems: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/ageiv/EventList:
+    get:
+      tags:
+        - Leaderboards
+      summary: List Age IV events and seasons
+      description: Documented by the wiki. The website sends an optional `isConsole` query parameter and
+        receives season/event records with `eventId`, `leaderboardId`, `eventName`, `startDate` and `endDate`.
+      operationId: getAge4EventList
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/ageiv/eventlist.html
+      x-path-confidence: documented
+      security: []
+      parameters:
+        - name: isConsole
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Event and season records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+              examples:
+                sample:
+                  value:
+                    - eventId: 160
+                      leaderboardId: 164
+                      eventName: Year A - Fall - Ranked Solo Crossplay 14
+                      startDate: '2026-08-01T00:00:00'
+                      endDate: '2026-10-01T00:00:00'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/GameStats/AgeIV/GetMatchDetail:
+    post:
+      tags:
+        - GameStats
+      summary: Get an Age IV match detail
+      description: Documented by the wiki as `getmatchdetail`; the official website builds it from the `/api/GameStats/AgeIV/`
+        base. The response carries the same `matchSummary` and `playerList` envelope as the v2 Age II detail.
+      operationId: getAge4MatchDetail
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/api/ageiv/getmatchdetail.html
+      x-path-confidence: documented
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameStatsRequest'
+      responses:
+        '200':
+          description: Match summary and players.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchDetail'
+              examples:
+                sample:
+                  value:
+                    matchSummary:
+                      gameId: '398953338'
+                      matchId: null
+                      profileId: 0
+                      userName: null
+                      avatarUrl: null
+                      dateTime: '2025-06-10 22:06:12.0'
+                      matchLength: 30.6
+                      playerCount: 0
+                      victoryResultID: 0
+                      mapType: My Map
+                      civilizationID: 0
+                      civilization: null
+                      winLoss: null
+                    playerList:
+                      - userId: '3008981'
+                        profileId: 0
+                        userName: AMI
+                        avatarUrl: https://avatars.steamstatic.com/7db4b32530a62a673fe3b8f8e85f2764b92cd206_full.jpg
+                        elo: null
+                        playerStanding: 0.0
+                        isHuman: true
+                        team: 0
+                        civName: Byzantines
+                        winLoss: Loss
+                        matchReplayAvailable: true
+                    statusCode: 0
+                    errorMessage: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ---------------------------------------------------------------------------
+  # Documented-only: Poll root and website metadata (LibreMatch wiki)
+  # ---------------------------------------------------------------------------
+
+  /Poll/:
+    get:
+      tags:
+        - Polls
+      summary: Poll channel probe
+      description: 'Documented by the wiki: the request carries a Steam credential and the response is 200 with an empty body (Content-Length 0). The wiki does not describe any payload.'
+      operationId: getPollRoot
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/poll/
+      x-path-confidence: documented
+      responses:
+        '200':
+          description: Empty body (Content-Length 0).
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /webapi/CountryList:
+    get:
+      tags:
+        - Web API
+      summary: List countries and ISO codes
+      description: Documented by the wiki at `/webapi/CountryList`; the response is an object keyed by country name with its ISO 3166-1 alpha-2 code. Public on the website.
+      operationId: getWebCountries
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/webapi/countrylist.html
+      x-path-confidence: documented
+      security: []
+      responses:
+        '200':
+          description: Country name to ISO code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CountryListResponse'
+              examples:
+                sample:
+                  value:
+                    Afghanistan: AF
+                    Germany: DE
+                    United States: US
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /webapi/Games:
+    get:
+      tags:
+        - Web API
+      summary: List the games (website metadata)
+      description: Documented by the wiki at `/webapi/Games`; returns the five titles with their `gameVersion`. This is the website catalogue, distinct from `/api/v4/mods/Games`. Public.
+      operationId: getWebGames
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/webapi/games.html
+      x-path-confidence: documented
+      security: []
+      responses:
+        '200':
+          description: The five titles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameList'
+              examples:
+                sample:
+                  value:
+                    - gameTitleId: 1
+                      gameTitleName: Age of Empires DE
+                      gameVersion: 1.1.1
+                    - gameTitleId: 2
+                      gameTitleName: Age of Empires II DE
+                      gameVersion: '1'
+                    - gameTitleId: 3
+                      gameTitleName: Age of Empires III DE
+                      gameVersion: '1'
+                    - gameTitleId: 4
+                      gameTitleName: Age of Empires IV
+                      gameVersion: '1'
+                    - gameTitleId: 5
+                      gameTitleName: Age of Mythology
+                      gameVersion: '1'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /webapi/Languages:
+    get:
+      tags:
+        - Web API
+      summary: List the supported languages
+      description: Documented by the wiki at `/webapi/Languages`; the example sends `gameId=age1` (and `gameId=aoe` in the linked request). The wiki notes that the parameter list is incomplete. Public.
+      operationId: getWebLanguages
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/webapi/languages.html
+      x-path-confidence: documented
+      security: []
+      parameters:
+        - name: gameId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Game identifier used by the website (`age1`, `aoe`, ...).
+      responses:
+        '200':
+          description: Language records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LanguageList'
+              examples:
+                sample:
+                  value:
+                    - language: English US
+                      utf8Language: English
+                    - language: Spanish ES
+                      utf8Language: Español
+                    - language: German
+                      utf8Language: Deutsch
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /webapi/Twitter:
+    get:
+      tags:
+        - Web API
+      summary: Get the cached Twitter feed
+      description: Documented by the wiki at `/webapi/Twitter`; returns the cached posts with `lastUpdated`, `isCached` and `posts`. Public.
+      operationId: getWebTwitter
+      x-fidelity: Documented
+      x-source: wiki
+      x-doc: https://librematch.github.io/wiki/aoe/webapi/twitter.html
+      x-path-confidence: documented
+      security: []
+      responses:
+        '200':
+          description: Cached Twitter feed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TwitterFeed'
+              examples:
+                sample:
+                  value:
+                    lastUpdated: '2022-10-22T09:16:18.0866449-07:00'
+                    isCached: true
+                    posts:
+                      - imageUrl: https://cdn.ageofempires.com/aoe/ogthumb.jpg
+                        postDateTime: '2022-10-22T16:06:48'
+                        postContent: 'RT @redbullgaming: WOLOLOOOOOOOOOO!'
+                        postUrl: https://twitter.com/AgeOfEmpires/status/1583852381170962434
+                        author: redbullgaming
+                        authorAvatarUrl: https://pbs.twimg.com/profile_images/1530996570002432003/5wXO_8SA_400x400.jpg
+                        authorUrl: https://twitter.com/redbullgaming
+                        postDate: 10/22/2022
+        '500':
+          $ref: '#/components/responses/InternalServerError'
