@@ -1,0 +1,368 @@
+openapi: 3.2.1
+info:
+  title: PlayFab API
+  version: "2026-11-22"
+  description: |
+    The PlayFab REST surface the **official** service exposes to Age of
+    Mythology: Retold (AoM, title `C15F9`) and Age of Empires IV (A4, title
+    `ED603`).
+
+    Only the operations seen in the captures. Microsoft documents
+    them field by field in the [PlayFab REST API reference](https://learn.microsoft.com/en-us/xbox/playfab/api-references/),
+    linked per operation below. This file only records what a capture adds to
+    that reference — which session header each title sends, the SDK query
+    string, and the constants and limits observed on the wire.
+
+    ## Shared by every operation (observed)
+
+    * Answers are JSON with `content-type: application/json`. Success is
+      `{"code": 200, "status": "OK", "data": …}`; failure carries `error` and
+      `errorCode`, e.g. `InvalidSteamTicket` 1010, `OverLimit` 1214,
+      `EntityTokenInvalid` 1335.
+    * Both game SDKs send `X-Reporterrorassuccess: true`, and the errors arrive
+      inside an HTTP 200 (`OverLimit` was the one answer seen as a real 400).
+    * Session header: AoM sends `X-Entitytoken`; A4 sends `X-Sessionticket` and
+      the same ticket in `X-Authorization`.
+    * Query string: the PFC SDK adds `?sdk=&platform=&origin=` to the `/Client`,
+      `/Catalog`, `/CloudScript` and `/Inventory` calls; the PlayFabParty SDK
+      adds only `?sdk=`. A4 sends no query string.
+    * Paths and verbs not shown by a capture are not listed.
+  contact:
+    name: 'Libre:Match'
+    url: https://github.com/librematch/wiki
+  license:
+    name: GFDL-1.3-or-later
+    identifier: GFDL-1.3-or-later
+    url: https://www.gnu.org/licenses/fdl-1.3.html
+externalDocs:
+  description: >-
+    PlayFab REST API reference — the authoritative field-by-field
+    documentation of every operation below.
+  url: https://learn.microsoft.com/en-us/xbox/playfab/api-references/
+servers:
+  - url: https://c15f9.playfabapi.com
+    description: PlayFab, Age of Mythology Retold title (C15F9)
+  - url: https://ed603.playfabapi.com
+    description: PlayFab, Age of Empires IV title (ED603)
+tags:
+  - name: PlayFab
+    description: The operations the two titles use, with their capture evidence.
+security: []
+components:
+  securitySchemes:
+    EntityToken:
+      type: apiKey
+      in: header
+      name: X-Entitytoken
+      description: AoM session token, `data.EntityToken.EntityToken` of LoginWithSteam.
+    SessionTicket:
+      type: apiKey
+      in: header
+      name: X-Sessionticket
+      description: A4 session ticket, `data.SessionTicket` of LoginWithCustomID.
+    Authorization:
+      type: apiKey
+      in: header
+      name: X-Authorization
+      description: A4 only, sent with the same ticket as `X-Sessionticket`.
+paths:
+  /Client/GetTime:
+    post:
+      tags: [PlayFab]
+      summary: Server time
+      description: AoM. The PFC SDK sends the literal `null` as the body.
+      operationId: playfabGetTime
+      externalDocs:
+        description: Client — Get Time
+        url: https://learn.microsoft.com/en-us/rest/api/playfab/client/title-wide-data-management/get-time
+      x-games: [AoM]
+      x-captures: [playfab, playfabs]
+      security:
+        - EntityToken: []
+      responses:
+        '200':
+          description: Success envelope whose `data.Time` is the current UTC time.
+  /Client/GetPlayerCombinedInfo:
+    post:
+      tags: [PlayFab]
+      summary: Account summary
+      description: >-
+        AoM. Requested with `GetUserReadOnlyData: true` and a list of
+        `Mission_Season0_*` keys, yet answered with the whole skeleton and an empty
+        `UserReadOnlyData`; the same keys carry values in GetUserReadOnlyData.
+      operationId: playfabGetPlayerCombinedInfo
+      externalDocs:
+        description: Client — Get Player Combined Info
+        url: https://learn.microsoft.com/en-us/rest/api/playfab/client/account-management/get-player-combined-info
+      x-games: [AoM]
+      x-captures: [playfab, playfabs]
+      security:
+        - EntityToken: []
+      responses:
+        '200':
+          description: Success envelope with `PlayFabId` and `InfoResultPayload`.
+  /Client/GetTitleData:
+    post:
+      tags: [PlayFab]
+      summary: Title configuration
+      description: >-
+        AoM. Answered keys `CdnUrl` and `CdnPathConfig`, both strings;
+        `CdnPathConfig` is JSON that maps game versions to CDN branches and lists
+        18 bundles (7 `public/production`, 11 `public/release-candidate`).
+      operationId: playfabGetTitleData
+      externalDocs:
+        description: Client — Get Title Data
+        url: https://learn.microsoft.com/en-us/rest/api/playfab/client/title-wide-data-management/get-title-data
+      x-games: [AoM]
+      x-captures: [playfab, playfabs]
+      security:
+        - EntityToken: []
+      responses:
+        '200':
+          description: Success envelope with `data.Data`.
+  /Client/GetUserReadOnlyData:
+    post:
+      tags: [PlayFab]
+      summary: Read-only user data
+      description: >-
+        AoM. Read key by key with `IfChangedFromDataVersion: null`;
+        answered `{}` with `DataVersion` 0 while the account has no data, and with
+        `Permission: Private` entries otherwise. Keys seen `PunchCardProgress`,
+        `CurrentGauntletProgress`, `CurrentGauntletLabyrinth`,
+        `Mission_Season0_L0P0C<n>M<m>`.
+      operationId: playfabGetUserReadOnlyData
+      externalDocs:
+        description: Client — Get User Read Only Data
+        url: https://learn.microsoft.com/en-us/rest/api/playfab/client/player-data-management/get-user-read-only-data
+      x-games: [AoM]
+      x-captures: [playfab, playfabs]
+      security:
+        - EntityToken: []
+      responses:
+        '200':
+          description: Success envelope with `data.Data` and `data.DataVersion`.
+  /Client/GetUserData:
+    post:
+      tags: [PlayFab]
+      summary: User data
+      description: >-
+        A4. The only key is `RLinkProfileID`, `Permission: Public`,
+        `DataVersion` 1; its value is the decimal Relic profile id.
+      operationId: playfabGetUserData
+      externalDocs:
+        description: Client — Get User Data
+        url: https://learn.microsoft.com/en-us/rest/api/playfab/client/player-data-management/get-user-data
+      x-games: [A4]
+      x-captures: [playfab_aoe4]
+      security:
+        - SessionTicket: []
+        - Authorization: []
+      responses:
+        '200':
+          description: Success envelope with `data.Data` and `data.DataVersion`.
+  /Client/LoginWithSteam:
+    post:
+      tags: [PlayFab]
+      summary: Login with a Steam ticket (AoM)
+      description: >-
+        AoM, anonymous. The captured body sent `CreateAccount: true`
+        and a `null` `InfoRequestParameters`, so the answer has no
+        `InfoResultPayload`; AoM reads it with GetPlayerCombinedInfo instead. An
+        invalid ticket is the `InvalidSteamTicket` envelope (1010) inside a 200.
+      operationId: playfabLoginWithSteam
+      externalDocs:
+        description: Client — Login With Steam
+        url: https://learn.microsoft.com/en-us/rest/api/playfab/client/authentication/login-with-steam
+      x-games: [AoM]
+      x-captures: [playfab, playfabs]
+      security: []
+      responses:
+        '200':
+          description: Login result, or `InvalidSteamTicket` in an error envelope.
+  /Client/LoginWithCustomID:
+    post:
+      tags: [PlayFab]
+      summary: Login with a custom id (A4)
+      description: >-
+        A4, anonymous. `CustomId` is the decimal Relic profile id,
+        `TitleId` is `ED603`, and A4 sends `0`/`1` where AoM sends booleans. The
+        answer carries `InfoResultPayload` inline; its `SessionTicket` is what
+        the following calls send in `X-Sessionticket`.
+      operationId: playfabLoginWithCustomID
+      externalDocs:
+        description: Client — Login With Custom ID
+        url: https://learn.microsoft.com/en-us/rest/api/playfab/client/authentication/login-with-custom-id
+      x-games: [A4]
+      x-captures: [playfab_aoe4]
+      security: []
+      responses:
+        '200':
+          description: Login result with `InfoResultPayload`.
+  /Client/UpdateUserTitleDisplayName:
+    post:
+      tags: [PlayFab]
+      summary: Set the display name
+      description: >-
+        Both titles, after login. Answered with the name as
+        `data.DisplayName` and nothing else.
+      operationId: playfabUpdateUserTitleDisplayName
+      externalDocs:
+        description: Client — Update User Title Display Name
+        url: https://learn.microsoft.com/en-us/rest/api/playfab/client/account-management/update-user-title-display-name
+      x-games: [A4, AoM]
+      x-captures: [playfab, playfabs, playfab_aoe4]
+      security:
+        - EntityToken: []
+        - SessionTicket: []
+      responses:
+        '200':
+          description: Success envelope with `data.DisplayName`.
+  /Event/WriteTelemetryEvents:
+    post:
+      tags: [PlayFab]
+      summary: Telemetry batch
+      description: >-
+        Both titles, anonymous, sent by the PlayFabParty SDK
+        (`EventNamespace` `playfab.party` / `playfab.party.internal`). The answer
+        assigns one 32-hex id per accepted event. A per-event payload over 10240
+        UTF-8 bytes was rejected with `OverLimit` (1214) as an HTTP 400.
+      operationId: playfabWriteTelemetryEvents
+      externalDocs:
+        description: Events — Write Telemetry Events
+        url: https://learn.microsoft.com/en-us/rest/api/playfab/events/play-stream-events/write-telemetry-events
+      x-games: [A4, AoM]
+      x-captures: [playfab, playfabs, playfab_aoe4]
+      security: []
+      responses:
+        '200':
+          description: Success envelope with `data.AssignedEventIds`.
+        '400':
+          description: Payload limit exceeded (`OverLimit`, 1214).
+  /Inventory/GetInventoryItems:
+    post:
+      tags: [PlayFab]
+      summary: Player inventory
+      description: >-
+        AoM. Asked with `Count` and `CollectionId`,
+        `ContinuationToken`, `Entity`, `Filter` as `null`. The answer always
+        carries an `ETag` — `1/MQ==` empty, `1/NDU=` with 44 items — plus
+        `LastModified` (`yyyy-MM-ddTHH:mm:ss.fffffff+00:00`) once there is stock.
+        No captured call needed a second page.
+      operationId: playfabGetInventoryItems
+      externalDocs:
+        description: Economy — Get Inventory Items
+        url: https://learn.microsoft.com/en-us/rest/api/playfab/economy/inventory/get-inventory-items
+      x-games: [AoM]
+      x-captures: [playfab, playfabs]
+      security:
+        - EntityToken: []
+      responses:
+        '200':
+          description: >-
+            Success envelope with the page, or `EntityTokenInvalid`
+            (1335) in an error envelope.
+  /Catalog/GetItems:
+    post:
+      tags: [PlayFab]
+      summary: Catalogue items
+      description: >-
+        AoM. Asked by GUID in `Ids`, with `AlternateIds: []` and
+        `Entity: null`; every row is owned by `C15F9` and repeats its friendly
+        name in `AlternateIds`, `FriendlyId` and `Title.NEUTRAL`.
+      operationId: playfabCatalogGetItems
+      externalDocs:
+        description: Economy — Get Items
+        url: https://learn.microsoft.com/en-us/rest/api/playfab/economy/catalog/get-items
+      x-games: [AoM]
+      x-captures: [playfab, playfabs]
+      security:
+        - EntityToken: []
+      responses:
+        '200':
+          description: Success envelope with `data.Items`.
+  /CloudScript/ExecuteFunction:
+    post:
+      tags: [PlayFab]
+      summary: CloudScript functions
+      description: >-
+        AoM. Functions seen `BuildGauntletLabyrinth`,
+        `StartGauntletMission` and `AwardMissionRewards`; `FunctionResult` is
+        absent when a result serialises to `null`, and `FunctionResultSize` is
+        still sent.
+      operationId: playfabExecuteFunction
+      externalDocs:
+        description: CloudScript — Execute Function
+        url: https://learn.microsoft.com/en-us/rest/api/playfab/cloudscript/server-side-cloud-script/execute-function
+      x-games: [AoM]
+      x-captures: [playfab]
+      security:
+        - EntityToken: []
+      responses:
+        '200':
+          description: Success envelope with the execution result.
+  /MultiplayerServer/GetCognitiveServicesToken:
+    post:
+      tags: [PlayFab]
+      summary: Speech token
+      description: >-
+        Both titles, asked for `TextToSpeech` in `WestUs`. No Microsoft
+        Learn page documents this operation; the captures answer an ES256 token
+        with its expiry and the regional Speech Services endpoint.
+      operationId: playfabGetCognitiveServicesToken
+      externalDocs:
+        description: >-
+          No per-operation reference page; see the PlayFab API
+          references index.
+        url: https://learn.microsoft.com/en-us/xbox/playfab/api-references/
+      x-games: [A4, AoM]
+      x-captures: [playfab, playfabs, playfab_aoe4]
+      security:
+        - EntityToken: []
+        - SessionTicket: []
+      responses:
+        '200':
+          description: >-
+            Success envelope with the token, its expiry and the service
+            endpoint.
+  /MultiplayerServer/ListPartyQosServers:
+    post:
+      tags: [PlayFab]
+      summary: Party QoS servers
+      description: >-
+        Both titles, anonymous. The SDK version travels inside
+        `CustomTags` (`{"CustomTags":{"Version":"0.0.0"}}`); the answer lists 17
+        regional probes and `PageSize: 17`.
+      operationId: playfabListPartyQosServers
+      externalDocs:
+        description: Multiplayer Server — List Party Qos Servers
+        url: https://learn.microsoft.com/en-us/rest/api/playfab/multiplayer/multiplayer-server/list-party-qos-servers
+      x-games: [A4, AoM]
+      x-captures: [playfab, playfabs, playfab_aoe4]
+      security: []
+      responses:
+        '200':
+          description: Success envelope with `data.QosServers` and `data.PageSize`.
+  /Party/RequestParty:
+    post:
+      tags: [PlayFab]
+      summary: Party server request
+      description: >-
+        Both titles. The captures use `/Party/RequestParty`, which has
+        no Microsoft Learn page of its own; the reference documents the service
+        sibling `/Party/RequestPartyService`, whose body differs (it requires a
+        `NetworkConfiguration`). Captured body `BuildAliasParams`,
+        `CustomTags`, `PartyId`, `PreferredRegions`, `SessionCookie`, `Version`.
+      operationId: playfabRequestParty
+      externalDocs:
+        description: >-
+          Multiplayer Server — Request Party Service (the documented
+          sibling of the captured path)
+        url: https://learn.microsoft.com/en-us/rest/api/playfab/multiplayer/multiplayer-server/request-party-service
+      x-games: [A4, AoM]
+      x-captures: [playfab, playfabs, playfab_aoe4]
+      security:
+        - EntityToken: []
+        - SessionTicket: []
+      responses:
+        '200':
+          description: Success envelope with the allocated party server.
